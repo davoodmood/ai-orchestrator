@@ -1,5 +1,8 @@
 import OpenAI from 'openai';
-import { GenerateRequest, GenerateResult, IProviderAdapter } from '../types';
+import { GenerateRequest, GenerateResult, IProviderAdapter, JobStatusResult } from '../types';
+
+// In-memory simulation of a job store for OpenAI's async operations like Sora
+const openAIJobStore = new Map<string, { status: 'pending' | 'completed', attempts: number }>();
 
 export class OpenAIAdapter implements IProviderAdapter {
   private client: OpenAI;
@@ -18,23 +21,47 @@ export class OpenAIAdapter implements IProviderAdapter {
           return await this.generateText(request.prompt, modelId);
         case 'image':
           return await this.generateImage(request.prompt, modelId);
+        case 'video':
+          // Video generation with Sora is asynchronous.
+          const providerJobId = `openai-sora-${Date.now()}`;
+          openAIJobStore.set(providerJobId, { status: 'pending', attempts: 0 });
+          return { 
+            status: 'pending', 
+            orchestratorJobId: providerJobId, 
+            provider: 'openai', 
+            model: modelId 
+          };
         default:
           return {
-            success: false,
+            status: 'failed',
             provider: 'openai',
             model: modelId,
-            data: '',
             error: `Unsupported generation type '${request.type}' for OpenAI.`,
           };
       }
     } catch (error: any) {
       return {
-        success: false,
+        status: 'failed',
         provider: 'openai',
         model: modelId,
-        data: '',
         error: error.message || 'An unknown error occurred with the OpenAI API.',
       };
+    }
+  }
+
+  async checkJobStatus(providerJobId: string): Promise<JobStatusResult> {
+    const job = openAIJobStore.get(providerJobId);
+    if (!job) {
+      return { status: 'failed', error: 'Job not found on OpenAI provider.' };
+    }
+
+    // SIMULATION: Let the job complete after 3 polling attempts for video.
+    job.attempts++;
+    if (job.attempts < 3) {
+      return { status: 'pending' };
+    } else {
+      openAIJobStore.delete(providerJobId); // Clean up the completed job
+      return { status: 'completed', data: 'http://path.to/simulated_sora_video.mp4' };
     }
   }
 
@@ -50,7 +77,7 @@ export class OpenAIAdapter implements IProviderAdapter {
     }
 
     return {
-      success: true,
+      status: 'completed',
       provider: 'openai',
       model: modelId,
       data: content,
@@ -63,15 +90,25 @@ export class OpenAIAdapter implements IProviderAdapter {
       prompt: prompt,
       n: 1,
       size: '1024x1024',
+      quality: 'hd',
     });
 
-    const imageUrl = response.data[0]?.url;
+    // if (!response || response && !Array.isArray(response.data)) {
+    //     throw new Error('No Response was returned from OpenAI image generation.');
+    // }
+
+    let imageUrl;
+
+    if (response && response.data && Array.isArray(response.data)) {
+        imageUrl = response.data[0]?.url;
+    }
+    
     if (!imageUrl) {
-      throw new Error('No image URL returned from OpenAI image generation.');
+        throw new Error('No image URL returned from OpenAI image generation.');
     }
 
     return {
-      success: true,
+      status: 'completed',
       provider: 'openai',
       model: modelId,
       data: imageUrl,

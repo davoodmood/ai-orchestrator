@@ -1,20 +1,15 @@
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai';
-import { GenerateRequest, GenerateResult, IProviderAdapter } from '../types';
+import { GenerateRequest, GenerateResult, IProviderAdapter, JobStatusResult } from '../types';
+
+// In-memory simulation of a job store for Google's async operations
+const googleJobStore = new Map<string, { status: 'pending' | 'completed', attempts: number }>();
 
 export class GoogleAdapter implements IProviderAdapter {
   private client: GoogleGenerativeAI;
-  // Basic safety settings to avoid blocking common prompts.
-  private safetySettings = [
-    { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-    { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-    { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-    { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-  ];
+  private safetySettings = [ /* ... safety settings ... */ ];
 
-  constructor(apiKey: string) {
-    if (!apiKey) {
-      throw new Error('Google API key is required.');
-    }
+  constructor(apiKey: string) { /* ... constructor ... */ 
+    if (!apiKey) { throw new Error('Google API key is required.'); }
     this.client = new GoogleGenerativeAI(apiKey);
   }
 
@@ -22,50 +17,36 @@ export class GoogleAdapter implements IProviderAdapter {
     try {
       switch (request.type) {
         case 'text':
-          return await this.generateText(request.prompt, modelId);
-        case 'audio':
-          // NOTE: As of late 2024, Google's TTS is often part of the Gemini API itself or a separate service.
-          // This is a placeholder for a potential future direct TTS model.
-          return this.unsupported(request.type, modelId);
+          // Text is synchronous and completes immediately
+          const model = this.client.getGenerativeModel({ model: modelId, safetySettings: this.safetySettings });
+          const result = await model.generateContent(request.prompt);
+          return { status: 'completed', provider: 'google', model: modelId, data: result.response.text() };
         case 'video':
-          // NOTE: Video generation (Veo) is asynchronous and may require polling.
-          // This is a simplified placeholder. A real implementation would need a robust polling mechanism.
-          return this.unsupported(request.type, modelId);
+          // Video is asynchronous, so we start a job and return a job ID.
+          const providerJobId = `google-vid-${Date.now()}`;
+          googleJobStore.set(providerJobId, { status: 'pending', attempts: 0 });
+          return { status: 'pending', orchestratorJobId: providerJobId, provider: 'google', model: modelId };
         default:
-          return this.unsupported(request.type, modelId);
+          return { status: 'failed', provider: 'google', model: modelId, error: `Unsupported type '${request.type}'.` };
       }
     } catch (error: any) {
-      return {
-        success: false,
-        provider: 'google',
-        model: modelId,
-        data: '',
-        error: error.message || 'An unknown error occurred with the Google API.',
-      };
+      return { status: 'failed', provider: 'google', model: modelId, error: error.message };
     }
   }
-  
-  private async generateText(prompt: string, modelId: string): Promise<GenerateResult> {
-    const model = this.client.getGenerativeModel({ model: modelId, safetySettings: this.safetySettings });
-    const result = await model.generateContent(prompt);
-    const response = result.response;
-    const text = response.text();
 
-    return {
-      success: true,
-      provider: 'google',
-      model: modelId,
-      data: text,
-    };
-  }
-  
-  private unsupported(type: string, modelId: string): GenerateResult {
-      return {
-          success: false,
-          provider: 'google',
-          model: modelId,
-          data: '',
-          error: `Generation type '${type}' is not currently supported by the Google adapter.`,
-      };
+  async checkJobStatus(providerJobId: string): Promise<JobStatusResult> {
+    const job = googleJobStore.get(providerJobId);
+    if (!job) {
+      return { status: 'failed', error: 'Job not found on Google provider.' };
+    }
+
+    // SIMULATION: Let the job complete after 2 polling attempts.
+    job.attempts++;
+    if (job.attempts < 2) {
+      return { status: 'pending' };
+    } else {
+      googleJobStore.delete(providerJobId); // Clean up the completed job
+      return { status: 'completed', data: 'http://path.to/simulated_video.mp4' };
+    }
   }
 }
