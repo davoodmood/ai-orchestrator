@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Orchestrator Documentation</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .prose h1, .prose h2, .prose h3 {
+            font-weight: 700;
+        }
+        .prose code {
+            background-color: #f3f4f6;
+            padding: 0.2em 0.4em;
+            border-radius: 6px;
+            font-size: 0.9em;
+        }
+        .prose pre {
+            background-color: #1f2937;
+            color: #d1d5db;
+            padding: 1em;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+         .prose pre code {
+            background-color: transparent;
+            padding: 0;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+    <div class="container mx-auto px-4 py-8 md:py-16 max-w-4xl">
+        <header class="text-center mb-12">
+            <h1 class="text-4xl md:text-5xl font-bold text-gray-900">AI Orchestrator</h1>
+            <p class="mt-4 text-lg text-gray-600">A flexible, multi-provider AI orchestrator for Node.js.</p>
+            <div class="mt-6 flex justify-center gap-4">
+                <a href="https://www.npmjs.com/package/ai-orchestrator" class="bg-blue-600 text-white font-semibold px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors">NPM Package</a>
+                <a href="https://github.com/your-username/ai-orchestrator" class="bg-gray-800 text-white font-semibold px-6 py-2 rounded-lg hover:bg-gray-900 transition-colors">GitHub Repo</a>
+            </div>
+        </header>
+
+        <main class="prose prose-lg max-w-none">
+            <p>This module allows you to define a pool of AI providers and models in a simple configuration and let the orchestrator handle the complexity of choosing the best one for the job, with automatic fallbacks, resilient error handling, and support for long-running asynchronous jobs.</p>
+
+            <h2 id="features">Key Features</h2>
+            <ul class="list-disc list-inside space-y-2">
+                <li><strong>Unified API</strong>: A single, simple <code>generate()</code> method to access any supported AI model.</li>
+                <li><strong>Multi-Provider & Multi-Modal</strong>: Out-of-the-box support for major providers and types (<code>text</code>, <code>image</code>, <code>video</code>, <code>audio</code>).</li>
+                <li><strong>Dynamic Routing Strategies</strong>:
+                    <ul class="list-disc list-inside ml-6 mt-2">
+                        <li><code>cost</code>: (Default) Prioritizes the cheapest model.</li>
+                        <li><code>latency</code>: Prioritizes the fastest model.</li>
+                        <li><code>quality</code>: Prioritizes the highest-quality model.</li>
+                    </ul>
+                </li>
+                <li><strong>Asynchronous Job Polling</strong>: Built-in support for long-running tasks like video generation via a <code>getJobResult()</code> method.</li>
+                <li><strong>Custom Provider Support</strong>: Easily integrate with your own local or self-hosted models, complete with a cached health-checking mechanism.</li>
+                <li><strong>Resilient Fallbacks</strong>: Automatically retries with the next-best provider if a request fails.</li>
+                <li><strong>Bring Your Own Logger</strong>: Integrates with your application's existing logger (e.g., Pino, Winston).</li>
+            </ul>
+
+            <h2 id="installation">Installation</h2>
+            <pre><code class="language-bash">npm install ai-orchestrator</code></pre>
+
+            <h2 id="quick-start">Quick Start</h2>
+            <p>1. Set your API keys in your environment variables:</p>
+            <pre><code class="language-bash">export OPENAI_API_KEY="sk-..."
+export GOOGLE_API_KEY="..."
+export ANTHROPIC_API_KEY="..."</code></pre>
+
+            <p>2. Import and initialize the orchestrator with your desired provider configuration.</p>
+            <pre><code class="language-typescript">import { AIOrchestrator } from 'ai-orchestrator';
+
+// Define your pool of available models
+const config = {
+  providers: [
+    {
+      name: 'openai',
+      apiKey: process.env.OPENAI_API_KEY || '',
+      models: [
+        { id: 'gpt-4o-mini', type: 'text', cost: 0.15, quality: 'high' },
+        { id: 'dall-e-3', type: 'image', cost: 0.04, quality: 'high' },
+      ]
+    },
+    {
+      name: 'custom',
+      apiKey: '',
+      baseUrl: 'http://localhost:8080',
+      models: [
+        { id: 'my-local-model', type: 'text', cost: 0.0, quality: 'low' }
+      ]
+    }
+  ]
+};
+
+const orchestrator = new AIOrchestrator(config);
+
+async function main() {
+  const response = await orchestrator.generate({
+    type: 'text',
+    prompt: 'Write a short poem about TypeScript.'
+  });
+
+  if (response.status === 'completed') {
+    console.log(`Response from ${response.provider} (${response.model}):`);
+    console.log(response.data);
+  } else {
+    console.error(`Generation failed: ${response.error}`);
+  }
+}
+
+main();</code></pre>
+
+            <h2 id="advanced-usage">Advanced Usage</h2>
+            <h3>Routing Strategies</h3>
+            <p>You can specify a routing strategy in the <code>generate</code> call.</p>
+            <pre><code class="language-typescript">// Prioritize the fastest response time
+const fastResponse = await orchestrator.generate({
+  type: 'text',
+  prompt: 'What is the capital of France?',
+  strategy: 'latency'
+});
+
+// Prioritize the highest quality model, regardless of cost
+const highQualityResponse = await orchestrator.generate({
+  type: 'text',
+  prompt: 'Explain the theory of relativity in simple terms.',
+  strategy: 'quality'
+});</code></pre>
+
+            <h3>Handling Asynchronous Jobs (Video/Audio)</h3>
+            <p>For long-running tasks, the <code>generate</code> method will return a <code>pending</code> status with a job ID. You can then use <code>getJobResult</code> to poll for the final result.</p>
+            <pre><code class="language-typescript">// Helper function to poll for a result
+async function pollUntilComplete(jobId: string, maxAttempts = 10, delay = 5000) {
+    for (let i = 0; i < maxAttempts; i++) {
+        console.log(`Polling attempt ${i + 1} for job ${jobId}...`);
+        const result = await orchestrator.getJobResult(jobId);
+
+        if (result.status === 'completed') {
+            console.log('Job completed!');
+            return result.data;
+        }
+        if (result.status === 'failed') {
+            throw new Error(`Job failed: ${result.error}`);
+        }
+        await new Promise(resolve => setTimeout(resolve, delay));
+    }
+    throw new Error('Job timed out after maximum polling attempts.');
+}
+
+// --- Start an async video generation job ---
+const videoResponse = await orchestrator.generate({
+  type: 'video',
+  prompt: 'A cat playing a grand piano on a beach at sunset'
+});
+
+if (videoResponse.status === 'pending' && videoResponse.orchestratorJobId) {
+  console.log(`Video generation started. Job ID: ${videoResponse.orchestratorJobId}`);
+  try {
+      const finalVideoUrl = await pollUntilComplete(videoResponse.orchestratorJobId);
+      if (finalVideoUrl) {
+          console.log('Final video URL:', finalVideoUrl);
+      }
+  } catch (error) {
+      console.error(error.message);
+  }
+}</code></pre>
+        </main>
+
+        <footer class="text-center mt-16 border-t pt-8 text-gray-500">
+            <p>AI Orchestrator | Licensed under MIT</p>
+        </footer>
+    </div>
+</body>
+</html>
