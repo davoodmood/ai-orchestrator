@@ -11,11 +11,14 @@ This module allows you to define a pool of AI providers and models in a simple c
 
 -   **Unified API**: A single, simple `generate()` method to access any supported AI model.
 -   **Multi-Provider Support**: Out-of-the-box support for major providers, easily extensible for others.
+-   **Asynchronous Job Polling**: Built-in support for long-running tasks like image generation via a getJobResult() method.
 -   **Dynamic Routing Strategies**:
     -   `cost`: (Default) Prioritizes the cheapest model.
     -   `latency`: Prioritizes the fastest model.
     -   `quality`: Prioritizes the highest-quality model.
 -   **Resilient Fallbacks**: Automatically retries with the next-best provider if a request fails.
+
+-   **Custom Provider Support**: Easily integrate with your own local or self-hosted models, complete with a cached health-checking mechanism.
 -   **Extensible & Configurable**: Define your own providers, models, and API keys without touching the source code.
 -   **Bring Your Own Logger**: Integrates with your application's existing logger (e.g., Pino, Winston).
 
@@ -48,7 +51,8 @@ const config = {
       apiKey: process.env.OPENAI_API_KEY || '',
       models: [
         { id: 'gpt-4o-mini', type: 'text', cost: 0.15, quality: 'high' },
-        { id: 'dall-e-3', type: 'image', cost: 0.04, quality: 'high' }
+        { id: 'dall-e-3', type: 'image', cost: 0.04, quality: 'high' },
+        { id: 'sora', type: 'video', cost: 1.0, quality: 'high' } // Example
       ]
     },
     {
@@ -59,11 +63,12 @@ const config = {
       ]
     },
     {
-        name: 'anthropic',
-        apiKey: process.env.ANTHROPIC_API_KEY || '',
-        models: [
-            { id: 'claude-3-haiku-20240307', type: 'text', cost: 0.25, quality: 'medium' }
-        ]
+      name: 'custom',
+      apiKey: '', // Not used by adapter, but can be used by your server
+      baseUrl: 'http://localhost:8080',
+      models: [
+        { id: 'my-local-model', type: 'text', cost: 0.0, quality: 'low' }
+      ]
     }
   ]
 };
@@ -73,13 +78,13 @@ const orchestrator = new AIOrchestrator(config);
 
 // Generate content!
 async function main() {
-  // The orchestrator will automatically pick the cheapest text model (gemini-1.5-flash)
+  // The orchestrator will automatically pick the cheapest text model (custom)
   const response = await orchestrator.generate({
     type: 'text',
     prompt: 'Write a short poem about TypeScript.'
   });
 
-  if (response.success) {
+  if (response.status === 'completed') {
     console.log(`Response from ${response.provider} (${response.model}):`);
     console.log(response.data);
   } else {
@@ -108,6 +113,48 @@ const highQualityResponse = await orchestrator.generate({
   prompt: 'Explain the theory of relativity in simple terms.',
   strategy: 'quality'
 });
+```
+
+### Handling Asynchronous Jobs (Video/Audio)
+For long-running tasks, the `generate` method will return a `pending` status with a job ID. You can then use `getJobResult` to poll for the final result.
+
+```typescript
+// Helper function to poll for a result
+async function pollUntilComplete(jobId: string, maxAttempts = 10, delay = 5000) {
+    for (let i = 0; i < maxAttempts; i++) {
+        console.log(`Polling attempt ${i + 1} for job ${jobId}...`);
+        const result = await orchestrator.getJobResult(jobId);
+
+        if (result.status === 'completed') {
+            console.log('Job completed!');
+            return result.data;
+        }
+        if (result.status === 'failed') {
+            throw new Error(`Job failed: ${result.error}`);
+        }
+        // If still pending, wait for the next attempt
+        await new Promise(resolve => setTimeout(resolve, delay));
+    }
+    throw new Error('Job timed out after maximum polling attempts.');
+}
+
+// --- Start an async video generation job ---
+const videoResponse = await orchestrator.generate({
+  type: 'video',
+  prompt: 'A cat playing a grand piano on a beach at sunset'
+});
+
+if (videoResponse.status === 'pending' && videoResponse.orchestratorJobId) {
+  console.log(`Video generation started. Job ID: ${videoResponse.orchestratorJobId}`);
+  try {
+      const finalVideoUrl = await pollUntilComplete(videoResponse.orchestratorJobId);
+      if (finalVideoUrl) {
+          console.log('Final video URL:', finalVideoUrl);
+      }
+  } catch (error: any) {
+      console.error(error.message);
+  }
+}
 ```
 
 ### Requesting a Specific Quality
