@@ -15,7 +15,8 @@ describe('CustomAdapter', () => {
   });
 
   it('should fail if health check fails', async () => {
-    mockFetch.mockResolvedValue({ ok: false }); // Health check fails
+    // The health check endpoint is called and returns an unhealthy status
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 503 });
 
     const request: GenerateRequest = { type: 'text', prompt: 'Hello' };
     const result = await adapter.generate(request, 'my-model');
@@ -23,10 +24,11 @@ describe('CustomAdapter', () => {
     expect(result.status).toBe('failed');
     expect(result.error).toContain('unhealthy');
     expect(mockFetch).toHaveBeenCalledWith(`${baseUrl}/health`);
+    expect(mockFetch).toHaveBeenCalledTimes(1); // Should not proceed to generate
   });
 
   it('should generate content if health check passes', async () => {
-    // First call for health check, second for generation
+    // First call for health check (ok), second for generation (ok)
     mockFetch
       .mockResolvedValueOnce({ ok: true })
       .mockResolvedValueOnce({
@@ -43,7 +45,8 @@ describe('CustomAdapter', () => {
     expect(mockFetch).toHaveBeenCalledWith(`${baseUrl}/generate`, expect.any(Object));
   });
 
-  it('should start an async job', async () => {
+  it('should start an async job if health check passes', async () => {
+    // First call for health check (ok), second for generation (ok, pending)
     mockFetch
       .mockResolvedValueOnce({ ok: true })
       .mockResolvedValueOnce({
@@ -58,15 +61,28 @@ describe('CustomAdapter', () => {
     expect(result.orchestratorJobId).toBe('custom-123');
   });
 
-  it('should poll for a job status', async () => {
-    mockFetch.mockResolvedValue({
+  it('should poll for a job status and get a completed result', async () => {
+    // The call to checkJobStatus fetches the job URL
+    mockFetch.mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve({ status: 'completed', data: 'Final video URL' }),
     });
 
     const result = await adapter.checkJobStatus('custom-123');
+
     expect(result.status).toBe('completed');
     expect(result.data).toBe('Final video URL');
     expect(mockFetch).toHaveBeenCalledWith(`${baseUrl}/job/custom-123`);
+  });
+
+  it('should handle a failed job status from the server', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ status: 'failed', error: 'Rendering failed' }),
+    });
+
+    const result = await adapter.checkJobStatus('custom-456');
+    expect(result.status).toBe('failed');
+    expect(result.error).toBe('Rendering failed');
   });
 });
