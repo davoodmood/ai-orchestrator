@@ -10,10 +10,26 @@ export interface ProviderConfig {
     name: string;
     apiKey: string;
     models: ModelConfig[];
-    // Optional properties for custom providers
+    
+    // --- Generic properties for the Custom Adapter ---
     baseUrl?: string;
     healthCheckEndpoint?: string;
-  }
+
+    // Defines the name of the header for authentication. Defaults to 'Authorization'.
+    // For one-api, you would set this to: 'one-api-token'
+    authenticationHeader?: string;
+
+    // Defines a prefix for the apiKey, e.g., 'Bearer '. Defaults to an empty string.
+    authenticationScheme?: string;
+
+    // A stringified JSON object defining the request body structure with placeholders.
+    // Example for one-api: '[{ "role": "user", "content": "{{prompt}}" }]'
+    requestBodyTemplate?: string;
+
+    // A dot-notation path to extract the final text from the response JSON.
+    // Example for one-api: 'result[0]'
+    responseExtractor?: string;
+}
   
 export interface OrchestratorConfig {
     providers: ProviderConfig[];

@@ -1,4 +1,9 @@
-import { GenerateRequest, GenerateResult, IProviderAdapter, JobStatusResult } from '../types';
+import { GenerateRequest, GenerateResult, IProviderAdapter, JobStatusResult, ProviderConfig } from '../types';
+
+// Helper function to safely get a nested property from an object using a string path like 'choices[0].text'
+function getNestedProperty(obj: any, path: string): any {
+  return path.split(/[.[\]]+/).filter(Boolean).reduce((acc, part) => acc && acc[part], obj);
+}
 
 interface HealthStatus {
   isHealthy: boolean;
@@ -6,17 +11,27 @@ interface HealthStatus {
 }
 
 export class CustomAdapter implements IProviderAdapter {
+  private config: ProviderConfig;
   private baseUrl: string;
   private healthCheckEndpoint: string;
   private healthStatus: HealthStatus = { isHealthy: false, lastChecked: 0 };
   private readonly healthCacheTTL = 60 * 1000; // Cache health status for 60 seconds
 
-  constructor(baseUrl: string, healthCheckEndpoint: string = '/health') {
-    this.baseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
-    this.healthCheckEndpoint = healthCheckEndpoint;
+  constructor(providerConfig: ProviderConfig) {
+    if (!providerConfig.baseUrl) {
+      throw new Error("CustomAdapter requires a 'baseUrl' in its configuration.");
+    }
+    this.config = providerConfig;
+    this.baseUrl = this.config?.baseUrl?.endsWith('/') ? this.config.baseUrl.slice(0, -1) : this.config.baseUrl ?? "";
+    this.healthCheckEndpoint = this.config?.healthCheckEndpoint ?? "";
   }
 
   private async checkHealth(): Promise<boolean> {
+    // If no health check endpoint is defined, assume the service is healthy.
+    if (!this.healthCheckEndpoint) {
+      return true;
+    }
+
     const now = Date.now();
     // Use cached status if it's recent and healthy
     if (this.healthStatus.isHealthy && (now - this.healthStatus.lastChecked < this.healthCacheTTL)) {
@@ -44,17 +59,37 @@ export class CustomAdapter implements IProviderAdapter {
     if (!isServerHealthy) {
       return {
         status: 'failed',
-        provider: 'custom',
+        provider: this.config.name,
         model: modelId,
         error: 'Custom server is unhealthy or unreachable.',
       };
     }
 
+    // --- 1. Dynamically construct headers ---
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const authHeaderName = this.config.authenticationHeader || 'Authorization';
+    const authScheme = this.config.authenticationScheme || '';
+    if (this.config.apiKey) {
+      headers[authHeaderName] = `${authScheme}${this.config.apiKey}`;
+    }
+
+    // --- 2. Dynamically construct the request body ---
+    let body: any;
+    if (this.config.requestBodyTemplate) {
+      let bodyString = this.config.requestBodyTemplate
+        .replace(/"{{prompt}}"/g, JSON.stringify(request.prompt))
+        .replace(/{{prompt}}/g, request.prompt)
+        .replace(/{{model}}/g, modelId);
+      body = JSON.parse(bodyString);
+    } else {
+      body = { model: modelId, prompt: request.prompt };
+    }
+
     try {
-      const response = await fetch(`${this.baseUrl}/generate`, {
+      const response = await fetch(`${this.baseUrl}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...request, model: modelId }),
+        headers,
+        body: JSON.stringify(body),
       });
 
       if (!response.ok) {
@@ -64,20 +99,32 @@ export class CustomAdapter implements IProviderAdapter {
       
       const responseData = await response.json();
 
+      // --- 3. Dynamically extract the result from the response ---
+      let extractedData: string;
+      if (this.config.responseExtractor) {
+        extractedData = getNestedProperty(responseData, this.config.responseExtractor);
+      } else {
+        extractedData = responseData.data || responseData.text;
+      }
+
+      if (typeof extractedData !== 'string') {
+        throw new Error(`Response extractor path "${this.config.responseExtractor}" did not yield a string.`);
+      }
+
       return {
-        status: responseData.status,
+        status: 'completed',
         orchestratorJobId: responseData.jobId,
-        provider: 'custom',
+        provider: this.config.name,
         model: modelId,
-        data: responseData.data,
-        error: responseData.error,
+        data: extractedData,
+        error: responseData.error
       };
     } catch (error: any) {
       return {
         status: 'failed',
-        provider: 'custom',
+        provider: this.config.name,
         model: modelId,
-        error: error.message || 'An unknown error occurred with the custom server.',
+        error: error.message || 'An unknown error occurred with the custom provider.',
       };
     }
   }

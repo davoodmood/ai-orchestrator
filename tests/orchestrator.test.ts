@@ -1,12 +1,12 @@
 import { AIOrchestrator } from '../src/index';
 import { OrchestratorConfig } from '../src/types';
 
-// Mock all adapters
+// Mock the adapter modules
 jest.mock('../src/adapters/openai');
 jest.mock('../src/adapters/google');
 jest.mock('../src/adapters/custom');
 
-// We need to get the actual classes to access their prototypes for mocking
+// Import the actual classes to access their prototypes for mocking
 import { CustomAdapter } from '../src/adapters/custom';
 import { GoogleAdapter } from '../src/adapters/google';
 import { OpenAIAdapter } from '../src/adapters/openai';
@@ -32,16 +32,16 @@ const mockConfig: OrchestratorConfig = {
     ],
   };
   
-  describe('AIOrchestrator', () => {
+describe('AIOrchestrator', () => {
     let orchestrator: AIOrchestrator;
   
-    // Mock the generate method on the prototype of each adapter class
+    // Get a reference to the mock implementations of the generate methods
     const mockCustomGenerate = CustomAdapter.prototype.generate as jest.Mock;
     const mockGoogleGenerate = GoogleAdapter.prototype.generate as jest.Mock;
     const mockOpenAIGenerate = OpenAIAdapter.prototype.generate as jest.Mock;
   
     beforeEach(() => {
-      // Clear all mocks before each test
+      // Clear mocks and re-initialize the orchestrator before each test
       mockCustomGenerate.mockClear();
       mockGoogleGenerate.mockClear();
       mockOpenAIGenerate.mockClear();
@@ -51,6 +51,7 @@ const mockConfig: OrchestratorConfig = {
     it('should select the cheapest provider by default (cost strategy)', async () => {
       mockCustomGenerate.mockResolvedValue({ status: 'completed', data: 'response' });
       await orchestrator.generate({ type: 'text', prompt: 'test' });
+      
       // Expects the first call to be to the 'custom' adapter's model
       expect(mockCustomGenerate).toHaveBeenCalledWith(expect.any(Object), 'local-llama');
     });
@@ -58,6 +59,7 @@ const mockConfig: OrchestratorConfig = {
     it('should select the fastest provider (latency strategy)', async () => {
       mockGoogleGenerate.mockResolvedValue({ status: 'completed', data: 'response' });
       await orchestrator.generate({ type: 'text', prompt: 'test', strategy: 'latency' });
+      
       // Expects the first call to be to the 'google' adapter's model
       expect(mockGoogleGenerate).toHaveBeenCalledWith(expect.any(Object), 'gemini-flash');
     });
