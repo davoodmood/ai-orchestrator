@@ -25,22 +25,41 @@ describe('GoogleAdapter', () => {
     adapter = new GoogleAdapter('fake-api-key');
   });
 
-  it('should generate text successfully', async () => {
+  it('should generate text successfully for a stateless request', async () => {
+    // 1. Mock the full response object, including usageMetadata
     mockGenerateContent.mockResolvedValue({
       response: {
         text: () => 'Hello from Gemini',
+        usageMetadata: {
+          promptTokenCount: 10,
+          candidatesTokenCount: 25,
+          totalTokenCount: 35,
+        },
       },
     });
 
     const request: GenerateRequest = { type: 'text', prompt: 'Hello' };
     const result = await adapter.generate(request, 'gemini-1.5-flash-latest');
 
+    // --- ASSERTIONS ---
     expect(result.status).toBe('completed');
     expect(result.provider).toBe('google');
     expect(result.data).toBe('Hello from Gemini');
+    // Verify that token usage is correctly passed back
+    expect(result.tokenUsage?.totalTokens).toBe(35);
+
+    // 2. Verify getGenerativeModel was called correctly
     expect(mockGetGenerativeModel).toHaveBeenCalledWith({
       model: 'gemini-1.5-flash-latest',
       safetySettings: expect.any(Array),
+      // Ensure systemInstruction is handled, even if undefined
+      systemInstruction: undefined,
+    });
+    
+    // 3. Verify generateContent was called with the correct structured payload
+    expect(mockGenerateContent).toHaveBeenCalledWith({
+        contents: [{ role: 'user', parts: [{ text: request.prompt }] }],
+        generationConfig: {}, // Empty config for this simple request
     });
   });
 

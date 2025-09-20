@@ -1,9 +1,15 @@
 export interface ModelConfig {
     id: string;
-    type: 'text' | 'image' | 'audio' | 'video'; // Added 'video' type
+    type: 'text' | 'image' | 'audio' | 'video' | 'embedding'; // Added 'video' type
     cost: number;
     quality: 'low' | 'medium' | 'high';
     avg_latency_ms?: number;
+    // model-specific overrides for the Custom Adapter
+    requestBodyTemplate?: string;
+    responseExtractor?: string;
+    embeddingRequestBodyTemplate?: string;
+    embeddingResponseExtractor?: string; 
+    supportsStreaming?: boolean;
 }
   
 export interface ProviderConfig {
@@ -29,6 +35,11 @@ export interface ProviderConfig {
     // A dot-notation path to extract the final text from the response JSON.
     // Example for one-api: 'result[0]'
     responseExtractor?: string;
+
+    // --- Custom Adapter Embedding Config ---
+    embeddingEndpoint?: string;
+    embeddingRequestBodyTemplate?: string;
+    embeddingResponseExtractor?: string;
 }
   
 export interface OrchestratorConfig {
@@ -41,6 +52,9 @@ export interface GenerateRequest {
     prompt: string;
     strategy?: 'cost' | 'latency' | 'quality';
     quality?: 'low' | 'medium' | 'high';
+    systemPrompt?: string; // NEW: For setting AI persona/rules
+    params?: GenerationParams; // NEW: For fine-grained control
+    caching?: CachingConfig; // NEW: For enabling session-based caching
 }
 
 
@@ -52,6 +66,26 @@ export interface GenerateResult {
     model: string;
     data?: string | Buffer; // Optional now, only present if status is 'completed'
     error?: string;
+    tokenUsage?: {
+        inputTokens: number;
+        outputTokens: number;
+        totalTokens: number;
+    };
+}
+
+// --- Embedding Request & Response Types ---
+
+export interface EmbedContentRequest {
+    texts: string[];
+    model?: string; // Optional model override
+    provider?: string; // Optional provider override
+    strategy?: string | string[];
+}
+
+export interface EmbedContentResponse {
+    success: boolean;
+    embeddings?: number[][];
+    error?: string;
 }
 
 // Represents the result from polling a job's status
@@ -60,9 +94,73 @@ export interface JobStatusResult {
     data?: string | Buffer; // The final data if the job is complete
     error?: string;
 }
+
+/**
+ * Defines the request for a streaming generation. It extends the standard
+ * GenerateRequest, as the initial parameters are the same.
+ */
+export interface GenerateStreamRequest extends GenerateRequest {}
+
+/**
+ * Represents a single chunk of data yielded from the stream.
+ */
+export interface StreamGenerateResult {
+    status: 'streaming' | 'completed' | 'error';
+    provider: string;
+    model: string;
+    data?: string; // The chunk of text
+    error?: string;
+    // The final token count, only sent with the 'completed' status chunk
+    tokenUsage?: {
+        inputTokens: number;
+        outputTokens: number;
+        totalTokens: number;
+    };
+}
+
   
 export interface IProviderAdapter {
     generate(request: GenerateRequest, modelId: string): Promise<GenerateResult>;
     // Optional method for providers that support async operations
     checkJobStatus?(providerJobId: string): Promise<JobStatusResult>;
+    // Optional method for stateful adapters to clean up session resources.
+    endChatSession?(sessionId: string): Promise<void>;
+    // Optional method for counting tokens.
+    countTokens?(request: CountTokensRequest): Promise<CountTokensResponse>;
+    // Optional method for streaming generation using an async generator.
+    generateStream?(request: GenerateStreamRequest, modelId: string): AsyncGenerator<StreamGenerateResult>;
+    // Optional embeded content method for db embeddings.
+    embedContent?(request: EmbedContentRequest, modelId: string): Promise<EmbedContentResponse>;
+}
+
+
+export interface GenerationParams {
+    temperature?: number;
+    maxTokens?: number; // Generic name, adapters will translate
+    topP?: number;
+    // ... any other common params
+}
+
+export interface CachingConfig {
+    sessionId: string; // A user-defined ID for a conversation or session
+}
+
+
+/**
+ * Defines the request for counting tokens.
+ * Specifies the text to be tokenized and the provider/model context.
+ */
+export interface CountTokensRequest {
+    text: string;
+    provider: string;
+    model: string;
+}
+
+/**
+ * Defines the response from a token counting operation.
+ */
+export interface CountTokensResponse {
+    success: boolean;
+    totalTokens?: number;
+    error?: string;
 }

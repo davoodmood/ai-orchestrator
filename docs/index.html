@@ -3,97 +3,167 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Orchestrator Documentation</title>
+    <title>AI Orchestrator SDK - Interactive Documentation</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <!-- 
+        Chosen Palette: "Cool Slate" - A professional and clean palette using slate grays, a white background, and a vibrant sky blue accent for interactive elements, creating a modern and focused developer experience.
+        Application Structure Plan: The application is structured as a single-page application with a fixed top navigation bar that controls dynamically visible content sections (tabs). This structure was chosen over a linear document to improve usability and knowledge retention. It allows developers to quickly jump to specific API methods or concepts without losing context, which is crucial for a technical reference. The inclusion of interactive "playgrounds" for each API method transforms passive reading into active learning, making the documentation a practical tool for experimentation and understanding.
+        Visualization & Content Choices: 
+        - SDK Features -> Goal: Inform -> Presentation: Cards with icons and text -> Interaction: None -> Justification: Provides a quick, visually appealing, and scannable overview of the SDK's main value propositions.
+        - Routing Logic -> Goal: Explain -> Presentation: Styled HTML/CSS flow diagram -> Interaction: None -> Justification: Visually represents the abstract decision-making process of the orchestrator in a simple, lightweight manner without requiring external libraries.
+        - API Methods -> Goal: Teach & Reference -> Presentation: Interactive Code Playgrounds -> Interaction: User can click "Run" to see a simulated, animated output for each code example -> Justification: This is the core engagement feature. It allows developers to immediately see the expected result of an API call (e.g., simulated streaming text), which is significantly more effective for learning than static code blocks.
+        - Configuration -> Goal: Guide -> Presentation: Code blocks with detailed annotations -> Interaction: Copy-to-clipboard -> Justification: Provides clear, actionable examples for complex setups like the Custom Adapter, with utility features to make them easy to use.
+        CONFIRMATION: NO SVG graphics used. NO Mermaid JS used.
+    -->
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
-        }
-        .prose h1, .prose h2, .prose h3 {
-            font-weight: 700;
-        }
-        .prose code {
-            background-color: #f3f4f6;
-            padding: 0.2em 0.4em;
-            border-radius: 6px;
-            font-size: 0.9em;
-        }
-        .prose pre {
-            background-color: #1f2937;
-            color: #d1d5db;
-            padding: 1em;
-            border-radius: 8px;
+        body { font-family: 'Inter', sans-serif; }
+        code, .code-block { font-family: 'Fira Code', monospace; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .nav-link { transition: all 0.2s ease-in-out; }
+        .nav-link.active { color: #0ea5e9; border-bottom-color: #0ea5e9; }
+        .nav-link:not(.active):hover { color: #38bdf8; border-bottom-color: #e5e7eb; }
+        .code-block {
+            background-color: #1e293b;
+            color: #e2e8f0;
+            padding: 1rem;
+            border-radius: 0.5rem;
             overflow-x: auto;
+            position: relative;
         }
-         .prose pre code {
-            background-color: transparent;
-            padding: 0;
+        .copy-btn {
+            position: absolute;
+            top: 0.5rem;
+            right: 0.5rem;
+            background-color: #334155;
+            color: #94a3b8;
+            border: none;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            cursor: pointer;
+            font-size: 0.75rem;
+            transition: all 0.2s ease;
+        }
+        .copy-btn:hover { background-color: #475569; color: #cbd5e1; }
+        .run-btn {
+            background-color: #0ea5e9;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            cursor: pointer;
+            font-weight: 500;
+            transition: background-color 0.2s ease;
+            margin-top: 0.75rem;
+        }
+        .run-btn:hover { background-color: #0284c7; }
+        .output-box {
+            background-color: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin-top: 1rem;
+            min-height: 50px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        /* For simulated typing cursor */
+        .typing-cursor::after {
+            content: '▋';
+            animation: blink 1s step-end infinite;
+            color: #0ea5e9;
+        }
+        @keyframes blink {
+            50% { opacity: 0; }
         }
     </style>
 </head>
-<body class="bg-gray-50 text-gray-800">
-    <div class="container mx-auto px-4 py-8 md:py-16 max-w-4xl">
-        <header class="text-center mb-12">
-            <h1 class="text-4xl md:text-5xl font-bold text-gray-900">AI Orchestrator</h1>
-            <p class="mt-4 text-lg text-gray-600">A flexible, multi-provider AI orchestrator for Node.js.</p>
-            <div class="mt-6 flex justify-center gap-4">
-                <a href="https://www.npmjs.com/package/ai-orchestrator" class="bg-blue-600 text-white font-semibold px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors">NPM Package</a>
-                <a href="https://github.com/davoodmood/ai-orchestrator" class="bg-gray-800 text-white font-semibold px-6 py-2 rounded-lg hover:bg-gray-900 transition-colors">GitHub Repo</a>
-            </div>
+<body class="bg-slate-50 text-slate-800">
+
+    <div class="container mx-auto p-4 md:p-8">
+        
+        <!-- Header -->
+        <header class="text-center mb-10">
+            <h1 class="text-4xl md:text-5xl font-bold text-slate-900">AI Orchestrator SDK</h1>
+            <p class="text-slate-600 mt-2 text-lg">The intelligent control plane for your AI-powered applications.</p>
         </header>
 
-        <main class="prose prose-lg max-w-none">
-            <p>This module allows you to define a pool of AI providers and models in a simple configuration and let the orchestrator handle the complexity of choosing the best one for the job, with automatic fallbacks, resilient error handling, and support for long-running asynchronous jobs.</p>
+        <!-- Navigation -->
+        <nav class="sticky top-0 bg-white/80 backdrop-blur-md z-10 border-b border-slate-200 mb-8">
+            <div class="flex items-center justify-center space-x-4 sm:space-x-8 text-sm sm:text-base font-medium text-slate-600">
+                <a href="#" class="nav-link active border-b-2 border-transparent py-4 px-2" data-tab="overview">Overview</a>
+                <a href="#" class="nav-link border-b-2 border-transparent py-4 px-2" data-tab="api">API Reference</a>
+                <a href="#" class="nav-link border-b-2 border-transparent py-4 px-2" data-tab="config">Configuration</a>
+                <a href="#" class="nav-link border-b-2 border-transparent py-4 px-2" data-tab="examples">Examples</a>
+            </div>
+        </nav>
 
-            <h2 id="features">Key Features</h2>
-            <ul class="list-disc list-inside space-y-2">
-                <li><strong>Unified API</strong>: A single, simple <code>generate()</code> method to access any supported AI model.</li>
-                <li><strong>Multi-Provider & Multi-Modal</strong>: Out-of-the-box support for major providers and types (<code>text</code>, <code>image</code>, <code>video</code>, <code>audio</code>).</li>
-                <li><strong>Dynamic Routing Strategies</strong>:
-                    <ul class="list-disc list-inside ml-6 mt-2">
-                        <li><code>cost</code>: (Default) Prioritizes the cheapest model.</li>
-                        <li><code>latency</code>: Prioritizes the fastest model.</li>
-                        <li><code>quality</code>: Prioritizes the highest-quality model.</li>
-                    </ul>
-                </li>
-                <li><strong>Asynchronous Job Polling</strong>: Built-in support for long-running tasks like video generation via a <code>getJobResult()</code> method.</li>
-                <li><strong>Custom Provider Support</strong>: Easily integrate with your own local or self-hosted models, complete with a cached health-checking mechanism.</li>
-                <li><strong>Resilient Fallbacks</strong>: Automatically retries with the next-best provider if a request fails.</li>
-                <li><strong>Bring Your Own Logger</strong>: Integrates with your application's existing logger (e.g., Pino, Winston).</li>
-            </ul>
+        <!-- Main Content -->
+        <main>
+            <!-- Overview Tab -->
+            <section id="overview" class="tab-content active">
+                <div class="bg-white p-6 md:p-8 rounded-lg shadow-sm">
+                    <h2 class="text-2xl font-bold text-slate-900 mb-4">What is AI Orchestrator?</h2>
+                    <p class="text-slate-600 mb-8">A flexible, multi-provider AI SDK for Node.js that dynamically routes requests to different models (OpenAI, Google, etc.) based on cost, latency, or quality. It simplifies using multiple AI services by providing a unified interface, automatic fallbacks, and powerful features like streaming, embeddings, and context-aware chat sessions, giving you full control over your AI operations.</p>
+                    
+                    <h3 class="text-xl font-bold text-slate-900 mb-6">Key Features</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <!-- Feature Cards -->
+                        <div class="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                            <h4 class="font-semibold text-slate-800">Unified API</h4>
+                            <p class="text-slate-500 text-sm mt-1">Access any model from any provider through a single, consistent set of methods.</p>
+                        </div>
+                        <div class="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                            <h4 class="font-semibold text-slate-800">Intelligent Routing</h4>
+                            <p class="text-slate-500 text-sm mt-1">Automatically select the best model based on tiered strategies like `['cost', 'quality']`.</p>
+                        </div>
+                        <div class="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                            <h4 class="font-semibold text-slate-800">Full Generation Control</h4>
+                            <p class="text-slate-500 text-sm mt-1">Specify `systemPrompt`, `temperature`, and other parameters for fine-tuned results.</p>
+                        </div>
+                        <div class="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                            <h4 class="font-semibold text-slate-800">Stateful Chat Sessions</h4>
+                            <p class="text-slate-500 text-sm mt-1">Manage conversational context effortlessly with `sessionId` to reduce token usage.</p>
+                        </div>
+                        <div class="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                            <h4 class="font-semibold text-slate-800">Real-time Streaming</h4>
+                            <p class="text-slate-500 text-sm mt-1">Stream responses token-by-token for interactive, real-time user experiences.</p>
+                        </div>
+                        <div class="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                            <h4 class="font-semibold text-slate-800">Text Embeddings</h4>
+                            <p class="text-slate-500 text-sm mt-1">Built-in support for creating vector embeddings, the foundation for RAG and semantic search.</p>
+                        </div>
+                    </div>
 
-            <h2 id="installation">Installation</h2>
-            <pre><code class="language-bash">npm install ai-orchestrator</code></pre>
+                    <h3 class="text-xl font-bold text-slate-900 mt-10 mb-4">Installation</h3>
+                    <div class="code-block">
+                        <button class="copy-btn">Copy</button>
+                        <code>npm install ai-orchestrator</code>
+                    </div>
 
-            <h2 id="quick-start">Quick Start</h2>
-            <p>1. Set your API keys in your environment variables:</p>
-            <pre><code class="language-bash">export OPENAI_API_KEY="sk-..."
-export GOOGLE_API_KEY="..."
-export ANTHROPIC_API_KEY="..."</code></pre>
+                    <h3 class="text-xl font-bold text-slate-900 mt-10 mb-4">Quick Start</h3>
+                    <p class="text-slate-600 mb-4">Define your available AI providers and models, create an orchestrator instance, and you're ready to make your first call.</p>
+                    <div class="code-block">
+                        <button class="copy-btn">Copy</button>
+                        <pre><code>import { AIOrchestrator } from 'ai-orchestrator';
 
-            <p>2. Import and initialize the orchestrator with your desired provider configuration.</p>
-            <pre><code class="language-typescript">import { AIOrchestrator } from 'ai-orchestrator';
-
-// Define your pool of available models
 const config = {
   providers: [
     {
-      name: 'openai',
-      apiKey: process.env.OPENAI_API_KEY || '',
+      name: 'google',
+      apiKey: process.env.GOOGLE_API_KEY,
       models: [
-        { id: 'gpt-4o-mini', type: 'text', cost: 0.15, quality: 'high' },
-        { id: 'dall-e-3', type: 'image', cost: 0.04, quality: 'high' },
+        { id: 'gemini-1.5-flash-latest', type: 'text', cost: 0.00, quality: 'medium' }
       ]
     },
     {
-      name: 'custom',
-      apiKey: '',
-      baseUrl: 'http://localhost:8080',
+      name: 'openai',
+      apiKey: process.env.OPENAI_API_KEY,
       models: [
-        { id: 'my-local-model', type: 'text', cost: 0.0, quality: 'low' }
+        { id: 'gpt-4o-mini', type: 'text', cost: 0.15, quality: 'high' }
       ]
     }
   ]
@@ -102,6 +172,7 @@ const config = {
 const orchestrator = new AIOrchestrator(config);
 
 async function main() {
+  // Automatically routes to Google's model based on the default 'cost' strategy
   const response = await orchestrator.generate({
     type: 'text',
     prompt: 'Write a short poem about TypeScript.'
@@ -110,72 +181,275 @@ async function main() {
   if (response.status === 'completed') {
     console.log(`Response from ${response.provider} (${response.model}):`);
     console.log(response.data);
-  } else {
-    console.error(`Generation failed: ${response.error}`);
   }
 }
 
 main();</code></pre>
+                    </div>
+                </div>
+            </section>
 
-            <h2 id="advanced-usage">Advanced Usage</h2>
-            <h3>Routing Strategies</h3>
-            <p>You can specify a routing strategy in the <code>generate</code> call.</p>
-            <pre><code class="language-typescript">// Prioritize the fastest response time
-const fastResponse = await orchestrator.generate({
-  type: 'text',
-  prompt: 'What is the capital of France?',
-  strategy: 'latency'
-});
+            <!-- API Reference Tab -->
+            <section id="api" class="tab-content">
+                <div class="bg-white p-6 md:p-8 rounded-lg shadow-sm">
+                    <h2 class="text-2xl font-bold text-slate-900 mb-2">API Reference</h2>
+                    <p class="text-slate-600 mb-8">Explore the core methods of the AI Orchestrator SDK. Try the interactive examples to see how they work.</p>
 
-// Prioritize the highest quality model, regardless of cost
-const highQualityResponse = await orchestrator.generate({
+                    <!-- generate Method -->
+                    <div class="border-t border-slate-200 pt-6 mt-6">
+                        <h3 class="text-xl font-mono text-sky-600">.generate()</h3>
+                        <p class="text-slate-600 my-4">The primary method for making a standard, non-streaming request. It intelligently routes the request to the best provider based on your strategy and returns a single, complete response.</p>
+                        <div class="code-block">
+                            <button class="copy-btn">Copy</button>
+                            <pre><code id="api-generate-code">const response = await orchestrator.generate({
   type: 'text',
-  prompt: 'Explain the theory of relativity in simple terms.',
-  strategy: 'quality'
+  prompt: 'What are the three most popular dog breeds in Germany?',
+  systemPrompt: 'You are a helpful assistant specializing in canine facts.',
+  strategy: ['cost', 'quality'] // Prioritize cost, then quality as a tie-breaker
 });</code></pre>
-
-            <h3>Handling Asynchronous Jobs (Video/Audio)</h3>
-            <p>For long-running tasks, the <code>generate</code> method will return a <code>pending</code> status with a job ID. You can then use <code>getJobResult</code> to poll for the final result.</p>
-            <pre><code class="language-typescript">// Helper function to poll for a result
-async function pollUntilComplete(jobId: string, maxAttempts = 10, delay = 5000) {
-    for (let i = 0; i < maxAttempts; i++) {
-        console.log(`Polling attempt ${i + 1} for job ${jobId}...`);
-        const result = await orchestrator.getJobResult(jobId);
-
-        if (result.status === 'completed') {
-            console.log('Job completed!');
-            return result.data;
-        }
-        if (result.status === 'failed') {
-            throw new Error(`Job failed: ${result.error}`);
-        }
-        await new Promise(resolve => setTimeout(resolve, delay));
-    }
-    throw new Error('Job timed out after maximum polling attempts.');
-}
-
-// --- Start an async video generation job ---
-const videoResponse = await orchestrator.generate({
-  type: 'video',
-  prompt: 'A cat playing a grand piano on a beach at sunset'
+                        </div>
+                        <button class="run-btn" data-target="api-generate-output">Run Example</button>
+                        <div id="api-generate-output" class="output-box">Click "Run Example" to see a simulated API response.</div>
+                    </div>
+                    
+                    <!-- generateStream Method -->
+                    <div class="border-t border-slate-200 pt-6 mt-8">
+                        <h3 class="text-xl font-mono text-sky-600">.generateStream()</h3>
+                        <p class="text-slate-600 my-4">For real-time applications. This method returns an async generator that yields chunks of the response as they become available, perfect for creating a "typing" effect in a UI.</p>
+                        <div class="code-block">
+                            <button class="copy-btn">Copy</button>
+                            <pre><code id="api-stream-code">const stream = orchestrator.generateStream({
+  type: 'text',
+  prompt: 'Write a short, three-sentence story about a robot who discovers music.',
 });
 
-if (videoResponse.status === 'pending' && videoResponse.orchestratorJobId) {
-  console.log(`Video generation started. Job ID: ${videoResponse.orchestratorJobId}`);
-  try {
-      const finalVideoUrl = await pollUntilComplete(videoResponse.orchestratorJobId);
-      if (finalVideoUrl) {
-          console.log('Final video URL:', finalVideoUrl);
-      }
-  } catch (error) {
-      console.error(error.message);
+for await (const chunk of stream) {
+  if (chunk.status === 'streaming') {
+    // Append chunk.data to your UI
   }
 }</code></pre>
-        </main>
+                        </div>
+                        <button class="run-btn" data-target="api-stream-output">Run Example</button>
+                        <div id="api-stream-output" class="output-box">Click "Run Example" to see a simulated stream.</div>
+                    </div>
 
-        <footer class="text-center mt-16 border-t pt-8 text-gray-500">
-            <p>AI Orchestrator | Licensed under MIT</p>
-        </footer>
+                    <!-- embedContent Method -->
+                    <div class="border-t border-slate-200 pt-6 mt-8">
+                        <h3 class="text-xl font-mono text-sky-600">.embedContent()</h3>
+                        <p class="text-slate-600 my-4">Transforms text into numerical vector representations (embeddings). This is the core function for building RAG, semantic search, or text clustering applications.</p>
+                        <div class="code-block">
+                            <button class="copy-btn">Copy</button>
+                            <pre><code id="api-embed-code">const response = await orchestrator.embedContent({
+  texts: [
+    'What a beautiful day!',
+    'The weather today is very pleasant.'
+  ],
+  model: 'text-embedding-ada-002' // Specify an embedding model
+});</code></pre>
+                        </div>
+                        <button class="run-btn" data-target="api-embed-output">Run Example</button>
+                        <div id="api-embed-output" class="output-box">Click "Run Example" to see a simulated embedding response.</div>
+                    </div>
+
+                    <!-- countTokens Method -->
+                    <div class="border-t border-slate-200 pt-6 mt-8">
+                        <h3 class="text-xl font-mono text-sky-600">.countTokens()</h3>
+                        <p class="text-slate-600 my-4">A utility method to calculate how many tokens a piece of text will consume for a specific provider. Essential for managing context window limits and estimating costs before sending a request.</p>
+                        <div class="code-block">
+                            <button class="copy-btn">Copy</button>
+                            <pre><code id="api-count-code">const response = await orchestrator.countTokens({
+  text: 'This is a sample sentence.',
+  provider: 'openai',
+  model: 'gpt-4o-mini'
+});</code></pre>
+                        </div>
+                        <button class="run-btn" data-target="api-count-output">Run Example</button>
+                        <div id="api-count-output" class="output-box">Click "Run Example" to see a simulated token count.</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Configuration Tab -->
+            <section id="config" class="tab-content">
+                 <div class="bg-white p-6 md:p-8 rounded-lg shadow-sm">
+                    <h2 class="text-2xl font-bold text-slate-900 mb-2">Advanced Configuration</h2>
+                    <p class="text-slate-600 mb-8">The SDK's power lies in its configuration. Below is a detailed guide to configuring the highly flexible `CustomAdapter` to connect to any RESTful AI API.</p>
+
+                    <h3 class="text-xl font-bold text-slate-900 mt-6 mb-4">Custom Adapter Deep Dive</h3>
+                    <p class="text-slate-600 mb-4">The `custom` provider type allows you to integrate with self-hosted models, internal APIs, or third-party services that don't have a dedicated adapter. You control every aspect of the API call through the configuration object.</p>
+
+                    <div class="code-block">
+                        <button class="copy-btn">Copy</button>
+                        <pre><code>const config = {
+  providers: [
+    {
+      name: 'my-custom-api',
+      // The base URL for all API calls
+      baseUrl: 'https://api.my-custom-ai.com/v1',
+      apiKey: 'your-secret-api-key',
+      
+      // Optional: A specific endpoint for health checks.
+      // The orchestrator will ping this before sending a request.
+      healthCheckEndpoint: '/healthz',
+
+      // --- Define Authentication ---
+      // Optional: Defaults to 'Authorization'.
+      authenticationHeader: 'X-Api-Key', 
+      // Optional: A scheme prepended to the key. Defaults to 'Bearer '.
+      // Set to '' for keys that don't need a scheme.
+      authenticationScheme: '',
+
+      // --- Define Request & Response Formats ---
+      // A stringified JSON template for the request body.
+      requestBodyTemplate: JSON.stringify({
+        model: '{{model}}', // '{{model}}' is a required placeholder
+        prompt: '{{prompt}}', // '{{prompt}}' is a required placeholder
+        system_prompt: '{{systemPrompt}}', // Optional placeholder
+        max_tokens: '{{maxTokens}}', // Optional placeholder
+        stream: false
+      }),
+
+      // Dot-notation path to extract the final text from the response JSON.
+      responseExtractor: 'choices[0].message.content',
+
+      // --- Define Models Served by this Provider ---
+      models: [
+        { 
+          id: 'my-llama3-_8b', 
+          type: 'text', 
+          cost: 0.0, 
+          quality: 'medium',
+          supportsStreaming: true 
+        }
+      ]
+    }
+  ]
+};</code></pre>
+                    </div>
+                 </div>
+            </section>
+            
+            <!-- Examples Tab -->
+            <section id="examples" class="tab-content">
+                <div class="bg-white p-6 md:p-8 rounded-lg shadow-sm">
+                    <h2 class="text-2xl font-bold text-slate-900 mb-2">Practical Examples</h2>
+                    <p class="text-slate-600 mb-8">See how to use the orchestrator to build common AI-powered features.</p>
+                    
+                    <div class="border-t border-slate-200 pt-6 mt-6">
+                        <h3 class="text-xl font-bold text-slate-900 mb-4">Stateful Chatbot with Context Caching</h3>
+                        <p class="text-slate-600 mb-4">Use the `caching.sessionId` property to maintain conversational context. The SDK automatically manages the session, so you don't need to re-send the `systemPrompt` on every turn, saving significant token costs.</p>
+                        <div class="code-block">
+                            <button class="copy-btn">Copy</button>
+                            <pre><code id="example-chat-code">const sessionId = 'user-123-conversation-abc';
+
+// First turn: establishes the session and caches the system prompt
+const response1 = await orchestrator.generate({
+  type: 'text',
+  prompt: 'What is the capital of France?',
+  systemPrompt: 'You are a helpful geography expert.',
+  caching: { sessionId }
+});
+
+// Second turn: Re-uses the cached system prompt automatically
+const response2 = await orchestrator.generate({
+  type: 'text',
+  prompt: 'And what is its population?',
+  caching: { sessionId } // No systemPrompt needed here
+});
+
+// Clean up the session from memory when the conversation is over
+await orchestrator.endChatSession(sessionId);</code></pre>
+                        </div>
+                        <button class="run-btn" data-target="example-chat-output">Run Example</button>
+                        <div id="example-chat-output" class="output-box">Click "Run Example" to see a simulated chat conversation.</div>
+                    </div>
+                </div>
+            </section>
+
+        </main>
     </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const navLinks = document.querySelectorAll('.nav-link');
+            const tabContents = document.querySelectorAll('.tab-content');
+
+            // Tab navigation
+            navLinks.forEach(link => {
+                link.addEventListener('click', e => {
+                    e.preventDefault();
+                    const tabId = link.getAttribute('data-tab');
+
+                    navLinks.forEach(l => l.classList.remove('active'));
+                    link.classList.add('active');
+
+                    tabContents.forEach(content => {
+                        content.id === tabId ? content.classList.add('active') : content.classList.remove('active');
+                    });
+                });
+            });
+
+            // Copy to clipboard
+            document.querySelectorAll('.copy-btn').forEach(button => {
+                button.addEventListener('click', () => {
+                    const codeBlock = button.nextElementSibling;
+                    const text = codeBlock.innerText;
+                    navigator.clipboard.writeText(text).then(() => {
+                        button.textContent = 'Copied!';
+                        setTimeout(() => { button.textContent = 'Copy'; }, 2000);
+                    }).catch(err => {
+                        console.error('Failed to copy text: ', err);
+                    });
+                });
+            });
+
+            // --- Interactive API Simulations ---
+            
+            function typeEffect(element, text, speed = 20) {
+                element.innerHTML = '';
+                element.classList.add('typing-cursor');
+                let i = 0;
+                function typing() {
+                    if (i < text.length) {
+                        element.innerHTML += text.charAt(i);
+                        i++;
+                        setTimeout(typing, speed);
+                    } else {
+                        element.classList.remove('typing-cursor');
+                    }
+                }
+                typing();
+            }
+
+            document.querySelectorAll('.run-btn').forEach(button => {
+                button.addEventListener('click', () => {
+                    const targetId = button.dataset.target;
+                    const outputBox = document.getElementById(targetId);
+                    outputBox.innerHTML = 'Simulating API call...';
+
+                    setTimeout(() => {
+                        switch(targetId) {
+                            case 'api-generate-output':
+                                typeEffect(outputBox, `// Response from google (gemini-1.5-flash-latest)\n{\n  status: 'completed',\n  provider: 'google',\n  model: 'gemini-1.5-flash-latest',\n  data: 'The three most popular dog breeds in Germany are the German Shepherd, the Dachshund (Teckel), and the German Pointer.',\n  tokenUsage: { inputTokens: 25, outputTokens: 48, totalTokens: 73 }\n}`);
+                                break;
+                            case 'api-stream-output':
+                                const streamText = "A tiny robot named Bolt whirred to life in a silent workshop. One day, it detected a strange vibration, a rhythm that made its circuits hum with joy. Following the sound, it found an old record player, and as the music filled the air, Bolt danced for the very first time.";
+                                typeEffect(outputBox, streamText, 30);
+                                break;
+                            case 'api-embed-output':
+                                typeEffect(outputBox, `// Response from openai (text-embedding-3-small)\n{\n  success: true,\n  embeddings: [\n    [0.018, -0.023, ..., 0.045], // Vector for 'What a beautiful day!'\n    [0.019, -0.021, ..., 0.048]  // Vector for 'The weather today is very pleasant.'\n  ]\n}`);
+                                break;
+                            case 'api-count-output':
+                                typeEffect(outputBox, `// Response\n{\n  success: true,\n  totalTokens: 5\n}`);
+                                break;
+                             case 'example-chat-output':
+                                typeEffect(outputBox, `// Turn 1 Response:\nAI: "The capital of France is Paris."\n\n// Turn 2 Response (context was remembered):\nAI: "The population of Paris is approximately 2.1 million people within the city limits."`);
+                                break;
+                        }
+                    }, 500);
+                });
+            });
+        });
+    </script>
 </body>
 </html>

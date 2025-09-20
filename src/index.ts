@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { OrchestratorConfig, GenerateRequest, GenerateResult, ProviderConfig, ModelConfig, JobStatusResult, IProviderAdapter } from './types';
+import { OrchestratorConfig, GenerateRequest, GenerateResult, ProviderConfig, ModelConfig, JobStatusResult, IProviderAdapter, CountTokensRequest, CountTokensResponse, GenerateStreamRequest, StreamGenerateResult, EmbedContentRequest, EmbedContentResponse } from './types';
 import { OpenAIAdapter } from './adapters/openai';
 import { GoogleAdapter } from './adapters/google';
 import { CustomAdapter } from './adapters/custom';
@@ -44,7 +44,7 @@ export class AIOrchestrator {
     }
   
     public async generate(request: GenerateRequest): Promise<GenerateResult> {
-      this.logger.info(`Received generate request: ${JSON.stringify(request)}`);
+      // this.logger.info(`Received generate request: ${JSON.stringify(request)}`);
       const candidateProviders = this.getSortedProviders(request);
   
       if (candidateProviders.length === 0) {
@@ -86,6 +86,77 @@ export class AIOrchestrator {
   
       return { status: 'failed', provider: 'none', model: 'none', error: 'All configured providers failed.' };
     }
+
+    /**
+     * Generates content as a stream of chunks, yielding each part as it becomes available.
+     * Ideal for real-time applications like chatbots.
+     * @param request The generation request.
+     */
+    public async * generateStream(request: GenerateStreamRequest): AsyncGenerator<StreamGenerateResult> {
+      this.logger.info(`Received stream generate request: ${JSON.stringify(request)}`);
+      const candidateProviders = this.getSortedProviders(request).filter(({ model }) => model.supportsStreaming);
+
+      if (candidateProviders.length === 0) {
+          yield { status: 'error', provider: 'none', model: 'none', error: 'No suitable provider found.' };
+          return;
+      }
+
+      let lastError = 'All configured providers failed or do not support streaming.';
+
+      for (const { provider, model } of candidateProviders) {
+          const adapter = this.adapters.get(provider.name);
+          if (!adapter) {
+              this.logger.error(`Adapter not initialized for provider: ${provider.name}`);
+              lastError = `Adapter not initialized for provider: ${provider.name}`;
+              continue;
+          }
+
+          // Check if the adapter supports the streaming method
+          if (!adapter.generateStream) {
+              this.logger.warn(`Provider ${provider.name} does not support streaming. Trying next provider.`);
+              lastError = `Provider ${provider.name} does not support streaming.`;
+              continue;
+          }
+
+          try {
+              this.logger.info(`Attempting to stream with ${provider.name} using model ${model.id}`);
+              // Yield all the chunks from the successful adapter stream
+              yield* adapter.generateStream(request, model.id);
+              // If the stream completes without errors, we are done.
+              return;
+          } catch (error: any) {
+              this.logger.error(`Exception during stream with ${provider.name}: ${error.message}. Trying next provider.`);
+              lastError = error.message;
+          }
+      }
+
+      // If all providers failed, yield a final error chunk.
+      yield { status: 'error', provider: 'none', model: 'none', error: lastError };
+    }
+
+    /**
+     * NEW: Generates vector embeddings for a batch of texts.
+     */
+    public async embedContent(request: EmbedContentRequest): Promise<EmbedContentResponse> {
+      const { provider, model } = this.getSortedProviders({ ...request, type: 'embedding' })[0] || {};
+  
+      if (!provider || !model) {
+          return { success: false, error: 'No suitable embedding provider found for the given criteria.' };
+      }
+  
+      const adapter = this.adapters.get(provider.name);
+      if (!adapter || !adapter.embedContent) {
+          return { success: false, error: `Provider '${provider.name}' does not support embedding.` };
+      }
+  
+      this.logger.info(`Attempting to embed content with ${provider.name} using model ${model.id}`);
+      try {
+          return await adapter.embedContent(request, model.id);
+      } catch (error: any) {
+          this.logger.error(`Exception during embedding with ${provider.name}: ${error.message}`);
+          return { success: false, error: error.message };
+      }
+  }
     
     public async getJobResult(orchestratorJobId: string): Promise<JobStatusResult> {
       const job = this.activeJobs.get(orchestratorJobId);
@@ -114,20 +185,102 @@ export class AIOrchestrator {
       return createHash('sha256').update(`${providerName}-${providerJobId}`).digest('hex');
     }
 
-
-    private getSortedProviders(request: GenerateRequest): { provider: ProviderConfig, model: ModelConfig }[] {
-      // ... (this logic remains the same)
+    private getSortedProviders(request: { type: ModelConfig['type']; strategy?: string | string[]; quality?: 'low' | 'medium' | 'high' }): { provider: ProviderConfig, model: ModelConfig }[] {
       const { type, strategy = 'cost', quality } = request;
+      const strategies = Array.isArray(strategy) ? strategy : [strategy];
+
       let candidates = this.config.providers
-      .flatMap(p => p.models.map(m => ({ provider: p, model: m })))
-      .filter(({ model }) => model.type === type);
-      if (quality) { candidates = candidates.filter(({ model }) => model.quality === quality); }
-      switch (strategy) {
-          case 'latency': candidates.sort((a, b) => (a.model.avg_latency_ms ?? Infinity) - (b.model.avg_latency_ms ?? Infinity)); break;
-          case 'quality': const qualityOrder = { 'high': 1, 'medium': 2, 'low': 3 }; candidates.sort((a, b) => qualityOrder[a.model.quality] - qualityOrder[b.model.quality]); break;
-          case 'cost': default: candidates.sort((a, b) => a.model.cost - b.model.cost); break;
+          .flatMap(p => p.models.map(m => ({ provider: p, model: m })))
+          .filter(({ model }) => model.type === type);
+
+      if (quality) {
+          candidates = candidates.filter(({ model }) => model.quality === quality);
       }
-      this.logger.info(`Provider priority list for strategy '${strategy}': ${candidates.map(c => `${c.provider.name}/${c.model.id}`).join(', ')}`);
+
+      const qualityOrder = { 'high': 1, 'medium': 2, 'low': 3 };
+
+      // Multi-level sort based on the strategy array
+      candidates.sort((a, b) => {
+          for (const currentStrategy of strategies) {
+              let comparison = 0;
+              switch (currentStrategy) {
+                  case 'latency':
+                      comparison = (a.model.avg_latency_ms ?? Infinity) - (b.model.avg_latency_ms ?? Infinity);
+                      break;
+                  case 'quality':
+                      comparison = qualityOrder[a.model.quality] - qualityOrder[b.model.quality];
+                      break;
+                  case 'cost':
+                      comparison = a.model.cost - b.model.cost;
+                      break;
+              }
+              if (comparison !== 0) {
+                  return comparison;
+              }
+          }
+          return 0; // Return 0 if all strategies result in a tie
+      });
+
+      this.logger.info(`Provider priority list for strategy '${strategies.join(', ')}': ${candidates.map(c => `${c.provider.name}/${c.model.id}`).join(', ')}`);
       return candidates;
     }
+
+    /**
+     * Ends a specific chat session, releasing any in-memory resources associated with it.
+     * This should be called when a conversation is over to prevent memory leaks.
+     * @param sessionId The unique identifier for the session to end.
+     */
+    public async endChatSession(sessionId: string): Promise<void> {
+      this.logger.info(`Received request to end chat session: ${sessionId}`);
+      for (const adapter of this.adapters.values()) {
+          // Check if the adapter has implemented the session management method
+          if (adapter.endChatSession) {
+              await adapter.endChatSession(sessionId);
+          }
+      }
+    }
+
+    /**
+     * Counts the number of tokens for a given text using a specific provider's tokenizer.
+     * @param request The request containing the text, provider, and model.
+     * @returns A promise that resolves to the token count result.
+     */
+    public async countTokens(request: CountTokensRequest): Promise<CountTokensResponse> {
+      this.logger.info(`Received token count request for provider ${request.provider}`);
+      const adapter = this.adapters.get(request.provider);
+
+      if (!adapter) {
+          return { success: false, error: `No adapter found for provider: ${request.provider}` };
+      }
+
+      if (!adapter.countTokens) {
+          return { success: false, error: `Provider '${request.provider}' does not support token counting.` };
+      }
+
+      try {
+          return await adapter.countTokens(request);
+      } catch (error: any) {
+          this.logger.error(`Exception during token count with ${request.provider}: ${error.message}`);
+          return { success: false, error: error.message };
+      }
+  }
+
+
+    // private getSortedProviders(request: GenerateRequest): { provider: ProviderConfig, model: ModelConfig }[] {
+    //   // ... (this logic remains the same)
+    //   const { type, strategy = 'cost', quality } = request;
+    //   let candidates = this.config.providers
+    //   .flatMap(p => p.models.map(m => ({ provider: p, model: m })))
+    //   .filter(({ model }) => model.type === type);
+    //   if (quality) { candidates = candidates.filter(({ model }) => model.quality === quality); }
+    //   switch (strategy) {
+    //       case 'latency': candidates.sort((a, b) => (a.model.avg_latency_ms ?? Infinity) - (b.model.avg_latency_ms ?? Infinity)); break;
+    //       case 'quality': const qualityOrder = { 'high': 1, 'medium': 2, 'low': 3 }; candidates.sort((a, b) => qualityOrder[a.model.quality] - qualityOrder[b.model.quality]); break;
+    //       case 'cost': default: candidates.sort((a, b) => a.model.cost - b.model.cost); break;
+    //   }
+    //   this.logger.info(`Provider priority list for strategy '${strategy}': ${candidates.map(c => `${c.provider.name}/${c.model.id}`).join(', ')}`);
+    //   return candidates;
+    // }
+
+    
   }

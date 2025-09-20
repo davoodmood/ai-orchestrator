@@ -1,11 +1,14 @@
 import OpenAI from 'openai';
-import { GenerateRequest, GenerateResult, IProviderAdapter, JobStatusResult } from '../types';
+import { GenerateRequest, GenerateResult, IProviderAdapter, JobStatusResult, CountTokensRequest, CountTokensResponse, EmbedContentRequest, EmbedContentResponse } from '../types';
+import { encoding_for_model, TiktokenModel } from 'tiktoken';
 
 // In-memory simulation of a job store for OpenAI's async operations like Sora
 const openAIJobStore = new Map<string, { status: 'pending' | 'completed', attempts: number }>();
 
 export class OpenAIAdapter implements IProviderAdapter {
   private client: OpenAI;
+  private chatSessions: Map<string, OpenAI.Chat.Completions.ChatCompletionMessageParam[]> = new Map();
+  private activeSoraJobs: Map<string, { status: 'pending' | 'completed', attempts: number }> = new Map();
 
   constructor(apiKey: string) {
     if (!apiKey) {
@@ -113,5 +116,48 @@ export class OpenAIAdapter implements IProviderAdapter {
       model: modelId,
       data: imageUrl,
     };
+  }
+
+  /**
+     * Counts tokens locally using the tiktoken library to avoid a network call.
+     * This is much more efficient for token counting.
+     * @param request The request containing the text and model ID.
+     * @returns The total number of tokens.
+     */
+  async countTokens(request: CountTokensRequest): Promise<CountTokensResponse> {
+    try {
+        // Throws an error if the model is not supported by tiktoken
+        const encoding = encoding_for_model(request.model as TiktokenModel);
+        const tokens = encoding.encode(request.text);
+        const totalTokens = tokens.length;
+        encoding.free(); // Important: release the memory used by the encoder
+        return { success: true, totalTokens };
+    } catch (error: any) {
+        return { success: false, error: `Could not count tokens for model ${request.model}. It may not be supported by the tiktoken library. Original error: ${error.message}` };
+    }
+  }
+
+  /**
+     * NEW: Generates embeddings for an array of texts using OpenAI's API.
+     */
+  async embedContent(request: EmbedContentRequest, modelId: string): Promise<EmbedContentResponse> {
+    try {
+        const response = await this.client.embeddings.create({
+            model: modelId,
+            input: request.texts,
+        });
+
+        // Sort embeddings to match the order of the input texts
+        const sortedEmbeddings = response.data.sort((a, b) => a.index - b.index);
+        const embeddings = sortedEmbeddings.map(item => item.embedding);
+
+        return { success: true, embeddings };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+  public async endChatSession(sessionId: string): Promise<void> {
+      // ... existing implementation ...
   }
 }
