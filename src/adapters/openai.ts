@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
 import { GenerateRequest, GenerateResult, IProviderAdapter, JobStatusResult, CountTokensRequest, CountTokensResponse, EmbedContentRequest, EmbedContentResponse } from '../types';
-import { encoding_for_model, TiktokenModel } from 'tiktoken';
+// import { encoding_for_model, TiktokenModel } from 'tiktoken';
 
 // In-memory simulation of a job store for OpenAI's async operations like Sora
 const openAIJobStore = new Map<string, { status: 'pending' | 'completed', attempts: number }>();
@@ -126,12 +126,13 @@ export class OpenAIAdapter implements IProviderAdapter {
      */
   async countTokens(request: CountTokensRequest): Promise<CountTokensResponse> {
     try {
+      console.log("not supported yet.")
         // Throws an error if the model is not supported by tiktoken
-        const encoding = encoding_for_model(request.model as TiktokenModel);
-        const tokens = encoding.encode(request.text);
-        const totalTokens = tokens.length;
-        encoding.free(); // Important: release the memory used by the encoder
-        return { success: true, totalTokens };
+        // const encoding = encoding_for_model(request.model as TiktokenModel);
+        // const tokens = encoding.encode(request.text);
+        // const totalTokens = tokens.length;
+        // encoding.free(); // Important: release the memory used by the encoder
+        return { success: false, totalTokens: 0 };
     } catch (error: any) {
         return { success: false, error: `Could not count tokens for model ${request.model}. It may not be supported by the tiktoken library. Original error: ${error.message}` };
     }

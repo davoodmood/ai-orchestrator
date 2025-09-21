@@ -52,9 +52,9 @@ export interface GenerateRequest {
     prompt: string;
     strategy?: 'cost' | 'latency' | 'quality';
     quality?: 'low' | 'medium' | 'high';
-    systemPrompt?: string; // NEW: For setting AI persona/rules
-    params?: GenerationParams; // NEW: For fine-grained control
-    caching?: CachingConfig; // NEW: For enabling session-based caching
+    systemPrompt?: string; // For setting AI persona/rules
+    params?: GenerationParams; // For fine-grained control
+    caching?: CachingConfig; // For enabling session-based caching
 }
 
 
