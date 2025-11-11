@@ -7,7 +7,7 @@ const openAIJobStore = new Map<string, { status: 'pending' | 'completed', attemp
 
 export class OpenAIAdapter implements IProviderAdapter {
   private client: OpenAI;
-  private chatSessions: Map<string, OpenAI.Chat.Completions.ChatCompletionMessageParam[]> = new Map();
+  private sessionState: Map<string, { previousResponseId?: string; instructions?: string }> = new Map();
   private activeSoraJobs: Map<string, { status: 'pending' | 'completed', attempts: number }> = new Map();
 
   constructor(apiKey: string) {
@@ -21,7 +21,7 @@ export class OpenAIAdapter implements IProviderAdapter {
     try {
       switch (request.type) {
         case 'text':
-          return await this.generateText(request.prompt, modelId);
+          return await this.generateText(request, modelId);
         case 'image':
           return await this.generateImage(request.prompt, modelId);
         case 'video':
@@ -68,15 +68,55 @@ export class OpenAIAdapter implements IProviderAdapter {
     }
   }
 
-  private async generateText(prompt: string, modelId: string): Promise<GenerateResult> {
-    const response = await this.client.chat.completions.create({
+  private async generateText(request: GenerateRequest, modelId: string): Promise<GenerateResult> {
+    const params: OpenAI.Responses.ResponseCreateParamsNonStreaming = {
       model: modelId,
-      messages: [{ role: 'user', content: prompt }],
-    });
+      input: request.prompt,
+    };
 
-    const content = response.choices[0]?.message?.content;
+    if (request.params?.temperature !== undefined) {
+      params.temperature = request.params.temperature;
+    }
+
+    if (request.params?.topP !== undefined) {
+      params.top_p = request.params.topP;
+    }
+
+    if (request.params?.maxTokens !== undefined) {
+      params.max_output_tokens = request.params.maxTokens;
+    }
+
+    const sessionId = request.caching?.sessionId;
+    let existingSession: { previousResponseId?: string; instructions?: string } | undefined;
+    if (sessionId) {
+      existingSession = this.sessionState.get(sessionId);
+
+      if (existingSession?.previousResponseId) {
+        params.previous_response_id = existingSession.previousResponseId;
+      }
+
+      const instructions = request.systemPrompt ?? existingSession?.instructions;
+      if (instructions) {
+        params.instructions = instructions;
+      }
+
+      params.store = true;
+    } else if (request.systemPrompt) {
+      params.instructions = request.systemPrompt;
+    }
+
+    const response = await this.client.responses.create(params);
+
+    const content = response.output_text;
     if (!content) {
       throw new Error('No content returned from OpenAI text generation.');
+    }
+
+    if (sessionId) {
+      this.sessionState.set(sessionId, {
+        previousResponseId: response.id,
+        instructions: params.instructions ?? existingSession?.instructions,
+      });
     }
 
     return {
@@ -84,6 +124,13 @@ export class OpenAIAdapter implements IProviderAdapter {
       provider: 'openai',
       model: modelId,
       data: content,
+      tokenUsage: response.usage
+        ? {
+            inputTokens: response.usage.input_tokens,
+            outputTokens: response.usage.output_tokens,
+            totalTokens: response.usage.total_tokens,
+          }
+        : undefined,
     };
   }
 
@@ -159,6 +206,8 @@ export class OpenAIAdapter implements IProviderAdapter {
 }
 
   public async endChatSession(sessionId: string): Promise<void> {
-      // ... existing implementation ...
+    if (this.sessionState.has(sessionId)) {
+      this.sessionState.delete(sessionId);
+    }
   }
 }

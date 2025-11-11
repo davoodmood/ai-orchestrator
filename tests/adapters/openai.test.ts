@@ -9,21 +9,19 @@ const MockedOpenAI = OpenAI as jest.MockedClass<typeof OpenAI>;
 
 describe('OpenAIAdapter', () => {
   let adapter: OpenAIAdapter;
-  const mockCreate = jest.fn();
+  const mockResponsesCreate = jest.fn();
   const mockImagesGenerate = jest.fn();
 
   beforeEach(() => {
     // Reset mocks before each test
     MockedOpenAI.mockClear();
-    mockCreate.mockClear();
+    mockResponsesCreate.mockClear();
     mockImagesGenerate.mockClear();
 
     // Setup the mock implementation
     MockedOpenAI.mockImplementation(() => ({
-      chat: {
-        completions: {
-          create: mockCreate,
-        },
+      responses: {
+        create: mockResponsesCreate,
       },
       images: {
         generate: mockImagesGenerate,
@@ -34,8 +32,14 @@ describe('OpenAIAdapter', () => {
   });
 
   it('should generate text successfully', async () => {
-    mockCreate.mockResolvedValue({
-      choices: [{ message: { content: 'Hello from OpenAI' } }],
+    mockResponsesCreate.mockResolvedValue({
+      id: 'resp_123',
+      output_text: 'Hello from OpenAI',
+      usage: {
+        input_tokens: 5,
+        output_tokens: 10,
+        total_tokens: 15,
+      },
     });
 
     const request: GenerateRequest = { type: 'text', prompt: 'Hello' };
@@ -44,10 +48,59 @@ describe('OpenAIAdapter', () => {
     expect(result.status).toBe('completed');
     expect(result.provider).toBe('openai');
     expect(result.data).toBe('Hello from OpenAI');
-    expect(mockCreate).toHaveBeenCalledWith({
+    expect(mockResponsesCreate).toHaveBeenCalledWith({
       model: 'gpt-4o-mini',
-      messages: [{ role: 'user', content: 'Hello' }],
+      input: 'Hello',
     });
+  });
+
+  it('should apply system instructions and reuse session caching', async () => {
+    mockResponsesCreate.mockResolvedValueOnce({
+      id: 'resp_session_1',
+      output_text: 'First turn',
+    });
+
+    await adapter.generate(
+      {
+        type: 'text',
+        prompt: 'Hello there',
+        systemPrompt: 'Speak like a pirate.',
+        caching: { sessionId: 'session-1' },
+      },
+      'gpt-4o-mini',
+    );
+
+    expect(mockResponsesCreate).toHaveBeenNthCalledWith(1, {
+      model: 'gpt-4o-mini',
+      input: 'Hello there',
+      instructions: 'Speak like a pirate.',
+      store: true,
+    });
+
+    mockResponsesCreate.mockResolvedValueOnce({
+      id: 'resp_session_2',
+      output_text: 'Second turn',
+    });
+
+    await adapter.generate(
+      {
+        type: 'text',
+        prompt: 'Ahoy?',
+        caching: { sessionId: 'session-1' },
+      },
+      'gpt-4o-mini',
+    );
+
+    expect(mockResponsesCreate).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        model: 'gpt-4o-mini',
+        input: 'Ahoy?',
+        previous_response_id: 'resp_session_1',
+        instructions: 'Speak like a pirate.',
+        store: true,
+      }),
+    );
   });
 
   it('should generate an image successfully', async () => {
@@ -100,7 +153,7 @@ describe('OpenAIAdapter', () => {
   });
 
   it('should handle API errors gracefully', async () => {
-    mockCreate.mockRejectedValue(new Error('API Key invalid'));
+    mockResponsesCreate.mockRejectedValue(new Error('API Key invalid'));
 
     const request: GenerateRequest = { type: 'text', prompt: 'Hello' };
     const result = await adapter.generate(request, 'gpt-4o-mini');
