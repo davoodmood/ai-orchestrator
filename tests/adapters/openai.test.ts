@@ -70,12 +70,15 @@ describe('OpenAIAdapter', () => {
       'gpt-4o-mini',
     );
 
-    expect(mockResponsesCreate).toHaveBeenNthCalledWith(1, {
-      model: 'gpt-4o-mini',
-      input: 'Hello there',
-      instructions: 'Speak like a pirate.',
-      store: true,
-    });
+  expect(mockResponsesCreate).toHaveBeenNthCalledWith(1, {
+    model: 'gpt-4o-mini',
+    input: [
+      { role: 'system', content: 'Speak like a pirate.' },
+      { role: 'user', content: 'Hello there' },
+    ],
+    instructions: 'Speak like a pirate.',
+    store: true,
+  });
 
     mockResponsesCreate.mockResolvedValueOnce({
       id: 'resp_session_2',
@@ -95,12 +98,40 @@ describe('OpenAIAdapter', () => {
       2,
       expect.objectContaining({
         model: 'gpt-4o-mini',
-        input: 'Ahoy?',
+        input: [
+          { role: 'system', content: 'Speak like a pirate.' },
+          { role: 'user', content: 'Ahoy?' },
+        ],
         previous_response_id: 'resp_session_1',
         instructions: 'Speak like a pirate.',
         store: true,
       }),
     );
+  });
+
+  it('should include system instructions when no caching is provided', async () => {
+    mockResponsesCreate.mockResolvedValue({
+      id: 'resp_no_cache',
+      output_text: 'Standalone response',
+    });
+
+    await adapter.generate(
+      {
+        type: 'text',
+        prompt: 'Explain recursion.',
+        systemPrompt: 'Respond in limerick form.',
+      },
+      'gpt-4o-mini',
+    );
+
+    expect(mockResponsesCreate).toHaveBeenCalledWith({
+      model: 'gpt-4o-mini',
+      input: [
+        { role: 'system', content: 'Respond in limerick form.' },
+        { role: 'user', content: 'Explain recursion.' },
+      ],
+      instructions: 'Respond in limerick form.',
+    });
   });
 
   it('should generate an image successfully', async () => {

@@ -90,19 +90,29 @@ export class OpenAIAdapter implements IProviderAdapter {
     let existingSession: { previousResponseId?: string; instructions?: string } | undefined;
     if (sessionId) {
       existingSession = this.sessionState.get(sessionId);
+    }
 
+    const systemInstructions = request.systemPrompt ?? existingSession?.instructions;
+    if (systemInstructions) {
+      const messages: OpenAI.Responses.EasyInputMessage[] = [
+        { role: 'user', content: request.prompt },
+      ];
+
+      messages.unshift({ role: 'system', content: systemInstructions });
+      params.input = messages;
+      params.instructions = systemInstructions;
+    } else {
+      params.input = request.prompt;
+    }
+
+    if (sessionId) {
       if (existingSession?.previousResponseId) {
         params.previous_response_id = existingSession.previousResponseId;
       }
-
-      const instructions = request.systemPrompt ?? existingSession?.instructions;
-      if (instructions) {
-        params.instructions = instructions;
+      if (systemInstructions) {
+        params.instructions = systemInstructions;
       }
-
       params.store = true;
-    } else if (request.systemPrompt) {
-      params.instructions = request.systemPrompt;
     }
 
     const response = await this.client.responses.create(params);
