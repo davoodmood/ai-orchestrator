@@ -1,13 +1,23 @@
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold, GenerationConfig, ChatSession, GenerateContentStreamResult, EmbedContentRequest as GoogleEmbedContentRequest } from '@google/generative-ai';
-import { CountTokensRequest, CountTokensResponse, EmbedContentRequest, EmbedContentResponse, GenerateRequest, GenerateResult, GenerateStreamRequest, IProviderAdapter, JobStatusResult, StreamGenerateResult } from '../types';
+import { CountTokensRequest, CountTokensResponse, EmbedContentRequest, EmbedContentResponse, GenerateRequest, GenerateResult, GenerateStreamRequest, IProviderAdapter, JobStatusResult, KeyRotationConfig, KeyRotationLogger, StreamGenerateResult } from '../types';
+import { KeyRotationManager } from '../utils/keyRotationManager';
 
 // In-memory simulation of a job store for Google's async operations
 const googleJobStore = new Map<string, { status: 'pending' | 'completed', attempts: number }>();
+
+interface GoogleAdapterOptions {
+  apiKey: string;
+  keyRotation?: KeyRotationConfig;
+  logger?: KeyRotationLogger;
+}
 
 export class GoogleAdapter implements IProviderAdapter {
   private client: GoogleGenerativeAI;
   // NEW: Manages active chat sessions based on user's sessionId
   private chatSessions: Map<string, ChatSession> = new Map();
+  private readonly logger: KeyRotationLogger;
+  private keyRotationManager?: KeyRotationManager;
+  private currentApiKey: string;
 
   private safetySettings = [
     { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
@@ -16,13 +26,99 @@ export class GoogleAdapter implements IProviderAdapter {
     { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
   ];
 
-  constructor(apiKey: string) { /* ... constructor ... */ 
+  constructor(apiKeyOrOptions: string | GoogleAdapterOptions) { /* ... constructor ... */ 
+    let apiKey: string;
+    let keyRotation: KeyRotationConfig | undefined;
+    let logger: KeyRotationLogger | undefined;
+
+    if (typeof apiKeyOrOptions === 'string') {
+      apiKey = apiKeyOrOptions;
+    } else {
+      apiKey = apiKeyOrOptions.apiKey;
+      keyRotation = apiKeyOrOptions.keyRotation;
+      logger = apiKeyOrOptions.logger;
+    }
+
     if (!apiKey) { throw new Error('Google API key is required.'); }
+    this.logger = logger ?? console;
+    this.currentApiKey = apiKey;
     this.client = new GoogleGenerativeAI(apiKey);
+
+    if (keyRotation && keyRotation.enabled !== false) {
+      try {
+        this.keyRotationManager = new KeyRotationManager({
+          initialKey: apiKey,
+          config: keyRotation,
+          logger: this.logger,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger?.warn?.('Failed to initialize key rotation for GoogleAdapter.', { message });
+      }
+    }
+  }
+
+  private async ensureClient(): Promise<void> {
+    if (!this.keyRotationManager) {
+      return;
+    }
+    try {
+      const activeKey = await this.keyRotationManager.getActiveKey();
+      if (activeKey && activeKey !== this.currentApiKey) {
+        this.client = new GoogleGenerativeAI(activeKey);
+        this.currentApiKey = activeKey;
+        this.logger?.info?.('GoogleAdapter refreshed client with rotated API key.', {
+          keySuffix: activeKey.slice(-6),
+        });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger?.error?.('Failed to acquire Google API key from rotation manager.', { message });
+    }
+  }
+
+  private async recordUsage(result: 'success' | 'rate-limit'): Promise<void> {
+    if (!this.keyRotationManager) {
+      return;
+    }
+    try {
+      if (result === 'success') {
+        await this.keyRotationManager.markSuccess();
+      } else {
+        await this.keyRotationManager.markRateLimit();
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger?.warn?.('Failed to update key rotation usage for GoogleAdapter.', { result, message });
+    }
+  }
+
+  private isRateLimitError(error: unknown): boolean {
+    if (!error) {
+      return false;
+    }
+    if (typeof error === 'object') {
+      const status = (error as any).status ?? (error as any).httpStatus;
+      if (status === 429) {
+        return true;
+      }
+      const code = (error as any).code;
+      if (typeof code === 'string' && /rate[_-]?limit/i.test(code)) {
+        return true;
+      }
+    }
+    const message =
+      typeof error === 'string'
+        ? error
+        : typeof error === 'object' && error && 'message' in error
+          ? String((error as any).message)
+          : '';
+    return /\brate limit\b/i.test(message) || /\b429\b/.test(message);
   }
 
   async generate(request: GenerateRequest, modelId: string): Promise<GenerateResult> {
     try {
+      await this.ensureClient();
       switch (request.type) {
         case 'text':
           const generationConfig: GenerationConfig = {
@@ -62,6 +158,8 @@ export class GoogleAdapter implements IProviderAdapter {
               const response = result.response;
               const tokenUsage = response.usageMetadata;
 
+            await this.recordUsage('success');
+
               return { 
                 status: 'completed', 
                 provider: 'google', 
@@ -79,6 +177,8 @@ export class GoogleAdapter implements IProviderAdapter {
               contents: [{ role: 'user', parts: [{ text: request.prompt }] }],
               generationConfig,
             });
+
+            await this.recordUsage('success');
 
             const response = result.response;
             const tokenUsage = response.usageMetadata;
@@ -99,11 +199,15 @@ export class GoogleAdapter implements IProviderAdapter {
           // Video is asynchronous, so we start a job and return a job ID.
           const providerJobId = `google-vid-${Date.now()}`;
           googleJobStore.set(providerJobId, { status: 'pending', attempts: 0 });
+          await this.recordUsage('success');
           return { status: 'pending', orchestratorJobId: providerJobId, provider: 'google', model: modelId };
         default:
           return { status: 'failed', provider: 'google', model: modelId, error: `Unsupported type '${request.type}'.` };
       }
     } catch (error: any) {
+      if (this.isRateLimitError(error)) {
+        await this.recordUsage('rate-limit');
+      }
       return { status: 'failed', provider: 'google', model: modelId, error: error.message };
     }
   }
@@ -115,6 +219,7 @@ export class GoogleAdapter implements IProviderAdapter {
      * @returns An async generator yielding stream chunks.
      */
   async * generateStream(request: GenerateStreamRequest, modelId: string): AsyncGenerator<StreamGenerateResult> {
+    await this.ensureClient();
     const generationConfig: GenerationConfig = {
         ...(request.params?.temperature && { temperature: request.params.temperature }),
         ...(request.params?.maxTokens && { maxOutputTokens: request.params.maxTokens }),
@@ -149,6 +254,8 @@ export class GoogleAdapter implements IProviderAdapter {
         }
 
         // After the stream is finished, get the aggregated response for token usage
+        await this.recordUsage('success');
+
         const finalResponse = await streamResult.response;
         const tokenUsage = finalResponse.usageMetadata;
 
@@ -164,6 +271,9 @@ export class GoogleAdapter implements IProviderAdapter {
         };
 
     } catch (error: any) {
+        if (this.isRateLimitError(error)) {
+          await this.recordUsage('rate-limit');
+        }
         yield { status: 'error', provider: 'google', model: modelId, error: error.message };
     }
   }
@@ -192,10 +302,15 @@ export class GoogleAdapter implements IProviderAdapter {
   */
   async countTokens(request: CountTokensRequest): Promise<CountTokensResponse> {
     try {
+      await this.ensureClient();
       const model = this.client.getGenerativeModel({ model: request.model });
       const { totalTokens } = await model.countTokens(request.text);
+      await this.recordUsage('success');
       return { success: true, totalTokens };
     } catch (error: any) {
+      if (this.isRateLimitError(error)) {
+        await this.recordUsage('rate-limit');
+      }
       return { success: false, error: error.message };
     }
   }
@@ -219,11 +334,13 @@ export class GoogleAdapter implements IProviderAdapter {
      */
   async embedContent(request: EmbedContentRequest, modelId: string): Promise<EmbedContentResponse> {
     try {
+        await this.ensureClient();
         const model = this.client.getGenerativeModel({ model: modelId });
 
         if (request.texts.length === 1) {
             // Use single, more direct method for one piece of text
             const result = await model.embedContent(request.texts[0]);
+            await this.recordUsage('success');
             return { success: true, embeddings: [result.embedding.values] };
         } else {
             // Use the batch method for multiple texts
@@ -232,9 +349,13 @@ export class GoogleAdapter implements IProviderAdapter {
             }));
             const result = await model.batchEmbedContents({ requests });
             const embeddings = result.embeddings.map(e => e.values);
+            await this.recordUsage('success');
             return { success: true, embeddings };
         }
     } catch (error: any) {
+        if (this.isRateLimitError(error)) {
+          await this.recordUsage('rate-limit');
+        }
         return { success: false, error: error.message };
     }
   }

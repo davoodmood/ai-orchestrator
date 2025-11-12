@@ -29,13 +29,25 @@ export class AIOrchestrator {
       // ... (adapter initialization logic remains the same)
       for (const provider of this.config.providers) {
         switch (provider.name.toLowerCase()) {
-          case 'openai': this.adapters.set('openai', new OpenAIAdapter(provider.apiKey)); break;
-          case 'google': this.adapters.set('google', new GoogleAdapter(provider.apiKey)); break;
+          case 'openai':
+            this.adapters.set('openai', new OpenAIAdapter({
+              apiKey: provider.apiKey,
+              keyRotation: provider.keyRotation,
+              logger: this.logger,
+            }));
+            break;
+          case 'google':
+            this.adapters.set('google', new GoogleAdapter({
+              apiKey: provider.apiKey,
+              keyRotation: provider.keyRotation,
+              logger: this.logger,
+            }));
+            break;
           // case 'anthropic': this.adapters.set('anthropic', new AnthropicAdapter(provider.apiKey)); break;
           // case 'deepseek': this.adapters.set('deepseek', new DeepSeekAdapter(provider.apiKey)); break;
           case 'custom':
             if (provider.baseUrl) {
-              this.adapters.set('custom', new CustomAdapter(provider));
+              this.adapters.set('custom', new CustomAdapter(provider, this.logger));
             } else { this.logger.error('Custom provider requires a `baseUrl`.'); }
             break;
           default: this.logger.warn(`No adapter found for provider: ${provider.name}`);

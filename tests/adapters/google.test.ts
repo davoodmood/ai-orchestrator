@@ -89,4 +89,36 @@ describe('GoogleAdapter', () => {
     expect(result.status).toBe('failed');
     expect(result.error).toContain('Unsupported type');
   });
+
+  it('re-initializes the Google client after API key rotation', async () => {
+    mockGenerateContent
+      .mockResolvedValueOnce({
+        response: {
+          text: () => 'Hello from Gemini',
+          usageMetadata: {},
+        },
+      })
+      .mockResolvedValueOnce({
+        response: {
+          text: () => 'Hello again',
+          usageMetadata: {},
+        },
+      });
+
+    MockedGoogleGenerativeAI.mockClear();
+    adapter = new GoogleAdapter({
+      apiKey: 'primary-key',
+      keyRotation: {
+        usageLimit: 1,
+        additionalKeys: ['rotated-key'],
+      },
+    });
+
+    await adapter.generate({ type: 'text', prompt: 'Hello' }, 'gemini-1.5-flash-latest');
+    await adapter.generate({ type: 'text', prompt: 'Hello again' }, 'gemini-1.5-flash-latest');
+
+    expect(MockedGoogleGenerativeAI).toHaveBeenCalledTimes(2);
+    expect(MockedGoogleGenerativeAI.mock.calls[0][0]).toBe('primary-key');
+    expect(MockedGoogleGenerativeAI.mock.calls[1][0]).toBe('rotated-key');
+  });
 });
