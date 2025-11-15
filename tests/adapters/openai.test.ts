@@ -192,4 +192,33 @@ describe('OpenAIAdapter', () => {
     expect(result.status).toBe('failed');
     expect(result.error).toBe('API Key invalid');
   });
+
+  it('re-initializes the OpenAI client after rotating to a new API key', async () => {
+    mockResponsesCreate
+      .mockResolvedValueOnce({
+        id: 'resp_first',
+        output_text: 'First response',
+      })
+      .mockResolvedValueOnce({
+        id: 'resp_second',
+        output_text: 'Second response',
+      });
+
+    MockedOpenAI.mockClear();
+
+    adapter = new OpenAIAdapter({
+      apiKey: 'primary-key',
+      keyRotation: {
+        usageLimit: 1,
+        additionalKeys: ['rotated-key'],
+      },
+    });
+
+    await adapter.generate({ type: 'text', prompt: 'hello' }, 'gpt-4o-mini');
+    await adapter.generate({ type: 'text', prompt: 'hello again' }, 'gpt-4o-mini');
+
+    expect(MockedOpenAI).toHaveBeenCalledTimes(2);
+    expect(MockedOpenAI.mock.calls[0][0]).toEqual({ apiKey: 'primary-key' });
+    expect(MockedOpenAI.mock.calls[1][0]).toEqual({ apiKey: 'rotated-key' });
+  });
 });

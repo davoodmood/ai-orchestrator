@@ -1,24 +1,126 @@
 import OpenAI from 'openai';
-import { GenerateRequest, GenerateResult, IProviderAdapter, JobStatusResult, CountTokensRequest, CountTokensResponse, EmbedContentRequest, EmbedContentResponse } from '../types';
+import { GenerateRequest, GenerateResult, IProviderAdapter, JobStatusResult, CountTokensRequest, CountTokensResponse, EmbedContentRequest, EmbedContentResponse, KeyRotationConfig, KeyRotationLogger } from '../types';
+import { KeyRotationManager } from '../utils/keyRotationManager';
 // import { encoding_for_model, TiktokenModel } from 'tiktoken';
 
 // In-memory simulation of a job store for OpenAI's async operations like Sora
 const openAIJobStore = new Map<string, { status: 'pending' | 'completed', attempts: number }>();
 
+interface OpenAIAdapterOptions {
+  apiKey: string;
+  keyRotation?: KeyRotationConfig;
+  logger?: KeyRotationLogger;
+  debug?: boolean;
+}
+
 export class OpenAIAdapter implements IProviderAdapter {
   private client: OpenAI;
   private sessionState: Map<string, { previousResponseId?: string; instructions?: string }> = new Map();
   private activeSoraJobs: Map<string, { status: 'pending' | 'completed', attempts: number }> = new Map();
+  private readonly logger: KeyRotationLogger;
+  private readonly debug: boolean;
+  private keyRotationManager?: KeyRotationManager;
+  private currentApiKey: string;
 
-  constructor(apiKey: string) {
+  constructor(apiKeyOrOptions: string | OpenAIAdapterOptions) {
+    let apiKey: string;
+    let keyRotation: KeyRotationConfig | undefined;
+    let logger: KeyRotationLogger | undefined;
+    let debug = false;
+
+    if (typeof apiKeyOrOptions === 'string') {
+      apiKey = apiKeyOrOptions;
+    } else {
+      apiKey = apiKeyOrOptions.apiKey;
+      keyRotation = apiKeyOrOptions.keyRotation;
+      logger = apiKeyOrOptions.logger;
+      debug = apiKeyOrOptions.debug ?? false;
+    }
+
     if (!apiKey) {
       throw new Error('OpenAI API key is required.');
     }
+    this.currentApiKey = apiKey;
+    this.logger = logger ?? console;
+    this.debug = debug;
     this.client = new OpenAI({ apiKey });
+
+    if (keyRotation && keyRotation.enabled !== false) {
+      try {
+        this.keyRotationManager = new KeyRotationManager({
+          initialKey: apiKey,
+          config: keyRotation,
+          logger: this.logger,
+          debug: this.debug,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger?.warn?.('Failed to initialize key rotation for OpenAIAdapter.', { message });
+      }
+    }
+  }
+
+  private async ensureClient(): Promise<void> {
+    if (!this.keyRotationManager) {
+      return;
+    }
+    try {
+      const activeKey = await this.keyRotationManager.getActiveKey();
+      if (activeKey && activeKey !== this.currentApiKey) {
+        this.client = new OpenAI({ apiKey: activeKey });
+        this.currentApiKey = activeKey;
+        this.logger?.info?.('OpenAIAdapter refreshed client with rotated API key.', {
+          keySuffix: activeKey.slice(-6),
+        });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger?.error?.('Failed to acquire API key from rotation manager.', { message });
+    }
+  }
+
+  private async recordUsage(result: 'success' | 'rate-limit'): Promise<void> {
+    if (!this.keyRotationManager) {
+      return;
+    }
+    try {
+      if (result === 'success') {
+        await this.keyRotationManager.markSuccess();
+      } else {
+        await this.keyRotationManager.markRateLimit();
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger?.warn?.('Failed to update key rotation usage for OpenAIAdapter.', { result, message });
+    }
+  }
+
+  private isRateLimitError(error: unknown): boolean {
+    if (!error) {
+      return false;
+    }
+    if (typeof error === 'object') {
+      const status = (error as any).status ?? (error as any).httpStatus;
+      if (status === 429) {
+        return true;
+      }
+      const code = (error as any).code;
+      if (typeof code === 'string' && /rate[_-]?limit/i.test(code)) {
+        return true;
+      }
+    }
+    const message =
+      typeof error === 'string'
+        ? error
+        : typeof error === 'object' && error && 'message' in error
+          ? String((error as any).message)
+          : '';
+    return /\brate limit\b/i.test(message) || /\b429\b/.test(message);
   }
 
   async generate(request: GenerateRequest, modelId: string): Promise<GenerateResult> {
     try {
+      await this.ensureClient();
       switch (request.type) {
         case 'text':
           return await this.generateText(request, modelId);
@@ -28,6 +130,7 @@ export class OpenAIAdapter implements IProviderAdapter {
           // Video generation with Sora is asynchronous.
           const providerJobId = `openai-sora-${Date.now()}`;
           openAIJobStore.set(providerJobId, { status: 'pending', attempts: 0 });
+          await this.recordUsage('success');
           return { 
             status: 'pending', 
             orchestratorJobId: providerJobId, 
@@ -43,6 +146,9 @@ export class OpenAIAdapter implements IProviderAdapter {
           };
       }
     } catch (error: any) {
+      if (this.isRateLimitError(error)) {
+        await this.recordUsage('rate-limit');
+      }
       return {
         status: 'failed',
         provider: 'openai',
@@ -129,6 +235,8 @@ export class OpenAIAdapter implements IProviderAdapter {
       });
     }
 
+    await this.recordUsage('success');
+
     return {
       status: 'completed',
       provider: 'openai',
@@ -167,6 +275,8 @@ export class OpenAIAdapter implements IProviderAdapter {
         throw new Error('No image URL returned from OpenAI image generation.');
     }
 
+    await this.recordUsage('success');
+
     return {
       status: 'completed',
       provider: 'openai',
@@ -200,20 +310,25 @@ export class OpenAIAdapter implements IProviderAdapter {
      */
   async embedContent(request: EmbedContentRequest, modelId: string): Promise<EmbedContentResponse> {
     try {
-        const response = await this.client.embeddings.create({
-            model: modelId,
-            input: request.texts,
-        });
+      await this.ensureClient();
+      const response = await this.client.embeddings.create({
+        model: modelId,
+        input: request.texts,
+      });
 
-        // Sort embeddings to match the order of the input texts
-        const sortedEmbeddings = response.data.sort((a, b) => a.index - b.index);
-        const embeddings = sortedEmbeddings.map(item => item.embedding);
+      // Sort embeddings to match the order of the input texts
+      const sortedEmbeddings = response.data.sort((a, b) => a.index - b.index);
+      const embeddings = sortedEmbeddings.map((item) => item.embedding);
 
-        return { success: true, embeddings };
+      await this.recordUsage('success');
+      return { success: true, embeddings };
     } catch (error: any) {
-        return { success: false, error: error.message };
+      if (this.isRateLimitError(error)) {
+        await this.recordUsage('rate-limit');
+      }
+      return { success: false, error: error.message };
     }
-}
+  }
 
   public async endChatSession(sessionId: string): Promise<void> {
     if (this.sessionState.has(sessionId)) {

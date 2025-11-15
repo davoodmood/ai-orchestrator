@@ -16,6 +16,7 @@ export interface ProviderConfig {
     name: string;
     apiKey: string;
     models: ModelConfig[];
+    keyRotation?: KeyRotationConfig;
     
     // --- Generic properties for the Custom Adapter ---
     baseUrl?: string;
@@ -44,6 +45,7 @@ export interface ProviderConfig {
   
 export interface OrchestratorConfig {
     providers: ProviderConfig[];
+    debug?: boolean;
     logger?: any; // Allow consumer to pass in a logger like pino or winston
 }
   
@@ -163,4 +165,31 @@ export interface CountTokensResponse {
     success: boolean;
     totalTokens?: number;
     error?: string;
+}
+
+export interface KeyRotationLogger {
+    debug?(message: string, context?: Record<string, unknown>): void;
+    info?(message: string, context?: Record<string, unknown>): void;
+    warn?(message: string, context?: Record<string, unknown>): void;
+    error?(message: string, context?: Record<string, unknown>): void;
+}
+
+export interface KeyRenewalConfig {
+    endpoint: string;
+    method?: 'GET' | 'POST';
+    headers?: Record<string, string>;
+    body?: any;
+    keyPath?: string;
+    timeoutMs?: number;
+}
+
+export interface KeyRotationConfig {
+    enabled?: boolean;
+    usageLimit: number;
+    usageWindowMs?: number;
+    cooldownMs?: number;
+    retryAttempts?: number;
+    retryDelayMs?: number;
+    additionalKeys?: string[];
+    renewal?: KeyRenewalConfig;
 }

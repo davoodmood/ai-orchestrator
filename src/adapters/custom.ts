@@ -1,4 +1,5 @@
-import { CountTokensRequest, CountTokensResponse, EmbedContentRequest, EmbedContentResponse, GenerateRequest, GenerateResult, GenerateStreamRequest, IProviderAdapter, JobStatusResult, ProviderConfig, StreamGenerateResult } from '../types';
+import { CountTokensRequest, CountTokensResponse, EmbedContentRequest, EmbedContentResponse, GenerateRequest, GenerateResult, GenerateStreamRequest, IProviderAdapter, JobStatusResult, KeyRotationLogger, ProviderConfig, StreamGenerateResult } from '../types';
+import { KeyRotationManager } from '../utils/keyRotationManager';
 
 // Helper function to safely get a nested property from an object using a string path like 'choices[0].text'
 function getNestedProperty(obj: any, path: string): any {
@@ -16,14 +17,88 @@ export class CustomAdapter implements IProviderAdapter {
   private healthCheckEndpoint: string;
   private healthStatus: HealthStatus = { isHealthy: false, lastChecked: 0 };
   private readonly healthCacheTTL = 60 * 1000; // Cache health status for 60 seconds
+  private readonly logger: KeyRotationLogger;
+  private readonly debug: boolean;
+  private keyRotationManager?: KeyRotationManager;
 
-  constructor(providerConfig: ProviderConfig) {
+  constructor(providerConfig: ProviderConfig, logger?: KeyRotationLogger, debug = false) {
     if (!providerConfig.baseUrl) {
       throw new Error("CustomAdapter requires a 'baseUrl' in its configuration.");
     }
     this.config = providerConfig;
     this.baseUrl = this.config?.baseUrl?.endsWith('/') ? this.config.baseUrl.slice(0, -1) : this.config.baseUrl ?? "";
     this.healthCheckEndpoint = this.config?.healthCheckEndpoint ?? "";
+    this.logger = logger ?? console;
+    this.debug = debug;
+
+    this.initializeKeyRotation();
+  }
+
+  private initializeKeyRotation(): void {
+    const rotation = this.config.keyRotation;
+    if (!rotation || rotation.enabled === false) {
+      return;
+    }
+
+    try {
+      this.keyRotationManager = new KeyRotationManager({
+        initialKey: this.config.apiKey,
+        config: rotation,
+        logger: this.logger,
+        debug: this.debug,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger?.warn?.('Failed to initialize key rotation for CustomAdapter.', { message });
+    }
+  }
+
+  private async resolveApiKey(): Promise<string | undefined> {
+    if (!this.keyRotationManager) {
+      return this.config.apiKey || undefined;
+    }
+    try {
+      return await this.keyRotationManager.getActiveKey();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger?.error?.('Failed to acquire API key from rotation manager.', { message });
+      return this.config.apiKey || undefined;
+    }
+  }
+
+  private async recordUsage(result: 'success' | 'rate-limit'): Promise<void> {
+    if (!this.keyRotationManager) {
+      return;
+    }
+    try {
+      if (result === 'success') {
+        await this.keyRotationManager.markSuccess();
+      } else {
+        await this.keyRotationManager.markRateLimit();
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger?.warn?.('Failed to record key rotation usage event.', { result, message });
+    }
+  }
+
+  private isRateLimitError(error: unknown): boolean {
+    if (!error) {
+      return false;
+    }
+    if (typeof error === 'object' && 'status' in error) {
+      const status = (error as any).status;
+      if (status === 429) {
+        return true;
+      }
+    }
+    const message =
+      typeof error === 'string'
+        ? error
+        : typeof error === 'object' && error && 'message' in error
+          ? String((error as any).message)
+          : '';
+    return /\brate limit\b/i.test(message) || /\b429\b/.test(message);
   }
 
   private async checkHealth(): Promise<boolean> {
@@ -116,8 +191,9 @@ export class CustomAdapter implements IProviderAdapter {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     const authHeaderName = this.config.authenticationHeader || 'Authorization';
     const authScheme = this.config.authenticationScheme || '';
-    if (this.config.apiKey) {
-      headers[authHeaderName] = `${authScheme}${this.config.apiKey}`;
+    const apiKey = await this.resolveApiKey();
+    if (apiKey) {
+      headers[authHeaderName] = `${authScheme}${apiKey}`;
     }
 
     // --- 2. Dynamically construct the request body ---
@@ -133,6 +209,7 @@ export class CustomAdapter implements IProviderAdapter {
     //   body = { model: modelId, prompt: request.prompt };
     // }
     const body = this._buildRequestBody(request, modelId);
+    let rateLimitNoted = false;
 
     try {
       const response = await fetch(`${this.baseUrl}`, {
@@ -142,13 +219,17 @@ export class CustomAdapter implements IProviderAdapter {
       });
 
       if (!response.ok) {
+        if (response.status === 429) {
+          await this.recordUsage('rate-limit');
+          rateLimitNoted = true;
+        }
         const errorBody = await response.text();
         throw new Error(`Custom server returned an error: ${response.status} ${errorBody}`);
       }
-      
+
       const responseData = await response.json();
 
-      // TODO: Add a debuging option here to see the api response log 
+      // TODO: Add a debuging option here to see the api response log
       // console.log("RAW API RESPONSE:", JSON.stringify(responseData, null, 2));
 
       // --- 3. Dynamically extract the result from the response ---
@@ -164,15 +245,20 @@ export class CustomAdapter implements IProviderAdapter {
         throw new Error(`Response extractor path "${this.config.responseExtractor}" did not yield a string.`);
       }
 
+      await this.recordUsage('success');
+
       return {
         status: 'completed',
         orchestratorJobId: responseData.jobId,
         provider: this.config.name,
         model: modelId,
         data: extractedData,
-        error: responseData.error
+        error: responseData.error,
       };
     } catch (error: any) {
+      if (!rateLimitNoted && this.isRateLimitError(error)) {
+        await this.recordUsage('rate-limit');
+      }
       return {
         status: 'failed',
         provider: this.config.name,
@@ -192,13 +278,15 @@ export class CustomAdapter implements IProviderAdapter {
     const headers: Record<string, string> = { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' };
     const authHeaderName = this.config.authenticationHeader || 'Authorization';
     const authScheme = this.config.authenticationScheme || '';
-    if (this.config.apiKey) {
-        headers[authHeaderName] = `${authScheme} ${this.config.apiKey}`.trim();
+    const apiKey = await this.resolveApiKey();
+    if (apiKey) {
+        headers[authHeaderName] = `${authScheme} ${apiKey}`.trim();
     }
 
     const body = this._buildRequestBody(request, modelId);
     // Add a 'stream: true' key, a common convention for streaming APIs
     body.stream = true;
+    let rateLimitNoted = false;
 
     try {
         const response = await fetch(this.baseUrl, {
@@ -208,6 +296,10 @@ export class CustomAdapter implements IProviderAdapter {
         });
 
         if (!response.ok || !response.body) {
+            if (response.status === 429) {
+                await this.recordUsage('rate-limit');
+                rateLimitNoted = true;
+            }
             throw new Error(`Custom server returned an error: ${response.status}`);
         }
 
@@ -227,9 +319,14 @@ export class CustomAdapter implements IProviderAdapter {
             };
         }
 
+        await this.recordUsage('success');
+
         yield { status: 'completed', provider: this.config.name, model: modelId };
 
     } catch (error: any) {
+        if (!rateLimitNoted && this.isRateLimitError(error)) {
+            await this.recordUsage('rate-limit');
+        }
         yield { status: 'error', provider: this.config.name, model: modelId, error: error.message };
     }
   }
@@ -246,12 +343,14 @@ export class CustomAdapter implements IProviderAdapter {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     const authHeaderName = this.config.authenticationHeader || 'Authorization';
     const authScheme = this.config.authenticationScheme || '';
-    if (this.config.apiKey) {
-        headers[authHeaderName] = `${authScheme} ${this.config.apiKey}`.trim();
+    const apiKey = await this.resolveApiKey();
+    if (apiKey) {
+        headers[authHeaderName] = `${authScheme} ${apiKey}`.trim();
     }
 
     const body = this._buildRequestBody(request, modelId);
     const endpoint = this.config.embeddingEndpoint || this.baseUrl; // Use a specific embedding endpoint if provided
+    let rateLimitNoted = false;
 
     try {
         const response = await fetch(endpoint, {
@@ -261,6 +360,10 @@ export class CustomAdapter implements IProviderAdapter {
         });
 
         if (!response.ok) {
+            if (response.status === 429) {
+                await this.recordUsage('rate-limit');
+                rateLimitNoted = true;
+            }
             const errorBody = await response.text();
             throw new Error(`Custom embedding endpoint returned an error: ${response.status} ${errorBody}`);
         }
@@ -281,9 +384,13 @@ export class CustomAdapter implements IProviderAdapter {
             return { success: false, error: 'Extracted embedding data is not a valid array of arrays.' };
         }
 
+        await this.recordUsage('success');
         return { success: true, embeddings };
 
     } catch (error: any) {
+        if (!rateLimitNoted && this.isRateLimitError(error)) {
+            await this.recordUsage('rate-limit');
+        }
         return { success: false, error: error.message };
     }
   }

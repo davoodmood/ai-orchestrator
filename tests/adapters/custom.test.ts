@@ -133,4 +133,89 @@ describe('CustomAdapter', () => {
     expect(result.status).toBe('completed');
     expect(result.data).toBe('This is the nested response');
   });
+
+  it('rotates API keys after successful usage when key rotation is configured', async () => {
+    const config: ProviderConfig = {
+      name: 'custom',
+      apiKey: 'key-primary',
+      baseUrl: 'http://localhost:8080',
+      responseExtractor: 'data',
+      keyRotation: {
+        usageLimit: 1,
+        additionalKeys: ['key-secondary'],
+      },
+      models: [],
+    };
+    const logger = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+    const adapter = new CustomAdapter(config, logger);
+
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ data: 'ok' }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ data: 'rotated' }),
+      });
+
+    await adapter.generate({ type: 'text', prompt: 'Hello' }, 'model');
+    await adapter.generate({ type: 'text', prompt: 'Hello again' }, 'model');
+
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8080',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'key-primary' }),
+      }),
+    );
+
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'key-secondary' }),
+      }),
+    );
+  });
+
+  it('rotates to the next key after hitting a rate limit response', async () => {
+    const config: ProviderConfig = {
+      name: 'custom',
+      apiKey: 'a-key',
+      baseUrl: 'http://localhost:8080',
+      responseExtractor: 'data',
+      keyRotation: {
+        usageLimit: 10,
+        additionalKeys: ['b-key'],
+      },
+      models: [],
+    };
+    const logger = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+    const adapter = new CustomAdapter(config, logger);
+
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 429,
+        text: () => Promise.resolve('Too many requests'),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ data: 'retry succeeded' }),
+      });
+
+    const first = await adapter.generate({ type: 'text', prompt: 'Hello' }, 'model');
+    expect(first.status).toBe('failed');
+
+    await adapter.generate({ type: 'text', prompt: 'Hello again' }, 'model');
+
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8080',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'b-key' }),
+      }),
+    );
+  });
 });

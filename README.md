@@ -166,7 +166,31 @@ const highQualityImage = await orchestrator.generate({
   prompt: 'A photorealistic image of an astronaut riding a horse on the moon',
   quality: 'high' // Will only consider models marked as 'high' quality
 });
+
+### API Key Rotation
+
+**ai-orchestrator** includes automatic API key rotation to help you avoid rate limits and maximize throughput. Simply provide multiple API keys in your configuration:
+
+```typescript
+keyRotation: {
+  enabled: true,
+  usageLimit: 100,  // Rotate after 100 requests
+  additionalKeys: ['key-2', 'key-3']
+}
 ```
+
+**Key Features:**
+- ✅ Automatic rotation on usage limits
+- ✅ Automatic failover on rate-limit errors (429)
+- ✅ Dynamic key renewal from your backend
+- ✅ Thread-safe for concurrent requests
+- ✅ Configurable cooldown periods and time windows
+
+**📖 [Complete Key Rotation Guide](./docs/KEY_ROTATION.md)**
+
+### For Adapter Developers
+
+If you're building a custom adapter, see the [Adapter Key Rotation Guidelines](./docs/KEY_ROTATION.md#adapter-developer-guide) for implementation details
 -----
 ## Contributing
 Contributions are welcome! Please feel free to submit a pull request or open an issue.
