@@ -11,10 +11,12 @@ interface KeyRotationManagerOptions {
   initialKey?: string;
   config: KeyRotationConfig;
   logger?: KeyRotationLogger;
+  debug?: boolean;
 }
 
 export class KeyRotationManager {
   private readonly logger: KeyRotationLogger | undefined;
+  private readonly debugEnabled: boolean;
   private readonly usageLimit: number;
   private readonly usageWindowMs?: number;
   private readonly cooldownMs?: number;
@@ -34,13 +36,14 @@ export class KeyRotationManager {
       throw new Error('KeyRotationManager requires a configuration object.');
     }
 
-    const { config, initialKey, logger } = options;
+    const { config, initialKey, logger, debug } = options;
 
     if (!config.usageLimit || config.usageLimit <= 0) {
       throw new Error('KeyRotationManager requires a positive usageLimit.');
     }
 
     this.logger = logger;
+    this.debugEnabled = debug ?? false;
     this.config = config;
     this.usageLimit = config.usageLimit;
     this.usageWindowMs = config.usageWindowMs;
@@ -64,6 +67,10 @@ export class KeyRotationManager {
 
     this.keys = Array.from(uniqueKeys);
     this.currentKey = this.keys[0];
+    this.logDebug('Initialized KeyRotationManager.', {
+      keyCount: this.keys.length,
+      currentKeySuffix: this.currentKey.slice(-6),
+    });
 
     const now = Date.now();
     this.usageByKey = new Map(
@@ -91,6 +98,11 @@ export class KeyRotationManager {
       const stats = this.getStats(this.currentKey);
       this.resetWindowIfExpired(this.currentKey);
       stats.count += 1;
+      this.logDebug('Marked success for current key.', {
+        keySuffix: this.currentKey.slice(-6),
+        usageCount: stats.count,
+        usageLimit: this.usageLimit,
+      });
       if (stats.count >= this.usageLimit) {
         shouldRotate = true;
       }
@@ -122,6 +134,7 @@ export class KeyRotationManager {
   }
 
   private async rotate(reason: KeyRotationTrigger): Promise<void> {
+    this.logDebug('Attempting key rotation.', { reason });
     if (this.rotationInFlight) {
       await this.rotationInFlight;
       return;
@@ -143,6 +156,7 @@ export class KeyRotationManager {
       const next = this.findNextUsableKey();
       if (next) {
         selectedKey = next;
+        this.logDebug('Found next usable key.', { keySuffix: next.slice(-6) });
         return;
       }
 
@@ -176,6 +190,10 @@ export class KeyRotationManager {
         await this.withLock(async () => {
           if (!this.keys.includes(newKey)) {
             this.keys.push(newKey);
+            this.logDebug('Added renewed key to rotation set.', {
+              keySuffix: newKey.slice(-6),
+              totalKeys: this.keys.length,
+            });
           }
           this.usageByKey.set(newKey, {
             count: 0,
@@ -209,6 +227,7 @@ export class KeyRotationManager {
 
   private findNextUsableKey(): string | null {
     if (this.keys.length <= 1) {
+      this.logDebug('Key rotation skipped: only one key available.');
       return null;
     }
 
@@ -384,5 +403,16 @@ export class KeyRotationManager {
 
   private static delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private logDebug(message: string, context?: Record<string, unknown>): void {
+    if (!this.debugEnabled) {
+      return;
+    }
+    if (this.logger?.debug) {
+      this.logger.debug(message, context);
+    } else {
+      this.logger?.info?.(message, context);
+    }
   }
 }

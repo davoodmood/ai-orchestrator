@@ -16,10 +16,12 @@ export class AIOrchestrator {
     private adapters: Map<string, IProviderAdapter> = new Map();
     private logger: any;
     private activeJobs: Map<string, ActiveJob> = new Map();
+  private readonly debug: boolean;
   
     constructor(config: OrchestratorConfig) {
       this.config = config;
       this.logger = config.logger || console;
+    this.debug = config.debug ?? false;
   
       this.initializeAdapters();
       this.logger.info('AIOrchestrator initialized.');
@@ -34,6 +36,7 @@ export class AIOrchestrator {
               apiKey: provider.apiKey,
               keyRotation: provider.keyRotation,
               logger: this.logger,
+              debug: this.debug,
             }));
             break;
           case 'google':
@@ -41,13 +44,14 @@ export class AIOrchestrator {
               apiKey: provider.apiKey,
               keyRotation: provider.keyRotation,
               logger: this.logger,
+              debug: this.debug,
             }));
             break;
           // case 'anthropic': this.adapters.set('anthropic', new AnthropicAdapter(provider.apiKey)); break;
           // case 'deepseek': this.adapters.set('deepseek', new DeepSeekAdapter(provider.apiKey)); break;
           case 'custom':
             if (provider.baseUrl) {
-              this.adapters.set('custom', new CustomAdapter(provider, this.logger));
+              this.adapters.set('custom', new CustomAdapter(provider, this.logger, this.debug));
             } else { this.logger.error('Custom provider requires a `baseUrl`.'); }
             break;
           default: this.logger.warn(`No adapter found for provider: ${provider.name}`);
@@ -113,7 +117,8 @@ export class AIOrchestrator {
           return;
       }
 
-      let lastError = 'All configured providers failed or do not support streaming.';
+      // @note: this error message is used to indicate that all provider instances failed or do not support streaming.
+      let lastError = 'All system instances for ai model generations failed or do not support streaming.';
 
       for (const { provider, model } of candidateProviders) {
           const adapter = this.adapters.get(provider.name);

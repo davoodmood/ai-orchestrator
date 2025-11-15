@@ -45,6 +45,7 @@ export interface ProviderConfig {
   
 export interface OrchestratorConfig {
     providers: ProviderConfig[];
+    debug?: boolean;
     logger?: any; // Allow consumer to pass in a logger like pino or winston
 }
   

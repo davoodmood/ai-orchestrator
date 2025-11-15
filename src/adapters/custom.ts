@@ -18,9 +18,10 @@ export class CustomAdapter implements IProviderAdapter {
   private healthStatus: HealthStatus = { isHealthy: false, lastChecked: 0 };
   private readonly healthCacheTTL = 60 * 1000; // Cache health status for 60 seconds
   private readonly logger: KeyRotationLogger;
+  private readonly debug: boolean;
   private keyRotationManager?: KeyRotationManager;
 
-  constructor(providerConfig: ProviderConfig, logger?: KeyRotationLogger) {
+  constructor(providerConfig: ProviderConfig, logger?: KeyRotationLogger, debug = false) {
     if (!providerConfig.baseUrl) {
       throw new Error("CustomAdapter requires a 'baseUrl' in its configuration.");
     }
@@ -28,6 +29,7 @@ export class CustomAdapter implements IProviderAdapter {
     this.baseUrl = this.config?.baseUrl?.endsWith('/') ? this.config.baseUrl.slice(0, -1) : this.config.baseUrl ?? "";
     this.healthCheckEndpoint = this.config?.healthCheckEndpoint ?? "";
     this.logger = logger ?? console;
+    this.debug = debug;
 
     this.initializeKeyRotation();
   }
@@ -43,6 +45,7 @@ export class CustomAdapter implements IProviderAdapter {
         initialKey: this.config.apiKey,
         config: rotation,
         logger: this.logger,
+        debug: this.debug,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

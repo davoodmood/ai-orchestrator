@@ -10,6 +10,7 @@ interface OpenAIAdapterOptions {
   apiKey: string;
   keyRotation?: KeyRotationConfig;
   logger?: KeyRotationLogger;
+  debug?: boolean;
 }
 
 export class OpenAIAdapter implements IProviderAdapter {
@@ -17,6 +18,7 @@ export class OpenAIAdapter implements IProviderAdapter {
   private sessionState: Map<string, { previousResponseId?: string; instructions?: string }> = new Map();
   private activeSoraJobs: Map<string, { status: 'pending' | 'completed', attempts: number }> = new Map();
   private readonly logger: KeyRotationLogger;
+  private readonly debug: boolean;
   private keyRotationManager?: KeyRotationManager;
   private currentApiKey: string;
 
@@ -24,6 +26,7 @@ export class OpenAIAdapter implements IProviderAdapter {
     let apiKey: string;
     let keyRotation: KeyRotationConfig | undefined;
     let logger: KeyRotationLogger | undefined;
+    let debug = false;
 
     if (typeof apiKeyOrOptions === 'string') {
       apiKey = apiKeyOrOptions;
@@ -31,6 +34,7 @@ export class OpenAIAdapter implements IProviderAdapter {
       apiKey = apiKeyOrOptions.apiKey;
       keyRotation = apiKeyOrOptions.keyRotation;
       logger = apiKeyOrOptions.logger;
+      debug = apiKeyOrOptions.debug ?? false;
     }
 
     if (!apiKey) {
@@ -38,6 +42,7 @@ export class OpenAIAdapter implements IProviderAdapter {
     }
     this.currentApiKey = apiKey;
     this.logger = logger ?? console;
+    this.debug = debug;
     this.client = new OpenAI({ apiKey });
 
     if (keyRotation && keyRotation.enabled !== false) {
@@ -46,6 +51,7 @@ export class OpenAIAdapter implements IProviderAdapter {
           initialKey: apiKey,
           config: keyRotation,
           logger: this.logger,
+          debug: this.debug,
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

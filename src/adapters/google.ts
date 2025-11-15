@@ -9,6 +9,7 @@ interface GoogleAdapterOptions {
   apiKey: string;
   keyRotation?: KeyRotationConfig;
   logger?: KeyRotationLogger;
+  debug?: boolean;
 }
 
 export class GoogleAdapter implements IProviderAdapter {
@@ -16,6 +17,7 @@ export class GoogleAdapter implements IProviderAdapter {
   // NEW: Manages active chat sessions based on user's sessionId
   private chatSessions: Map<string, ChatSession> = new Map();
   private readonly logger: KeyRotationLogger;
+  private readonly debug: boolean;
   private keyRotationManager?: KeyRotationManager;
   private currentApiKey: string;
 
@@ -30,6 +32,7 @@ export class GoogleAdapter implements IProviderAdapter {
     let apiKey: string;
     let keyRotation: KeyRotationConfig | undefined;
     let logger: KeyRotationLogger | undefined;
+    let debug = false;
 
     if (typeof apiKeyOrOptions === 'string') {
       apiKey = apiKeyOrOptions;
@@ -37,10 +40,12 @@ export class GoogleAdapter implements IProviderAdapter {
       apiKey = apiKeyOrOptions.apiKey;
       keyRotation = apiKeyOrOptions.keyRotation;
       logger = apiKeyOrOptions.logger;
+      debug = apiKeyOrOptions.debug ?? false;
     }
 
     if (!apiKey) { throw new Error('Google API key is required.'); }
     this.logger = logger ?? console;
+    this.debug = debug;
     this.currentApiKey = apiKey;
     this.client = new GoogleGenerativeAI(apiKey);
 
@@ -50,38 +55,52 @@ export class GoogleAdapter implements IProviderAdapter {
           initialKey: apiKey,
           config: keyRotation,
           logger: this.logger,
+          debug: this.debug,
+        });
+        this.log('info', 'Initialized key rotation manager.', {
+          initialKeySuffix: apiKey.slice(-6),
+          additionalKeys: keyRotation.additionalKeys?.length ?? 0,
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        this.logger?.warn?.('Failed to initialize key rotation for GoogleAdapter.', { message });
+        this.log('warn', 'Failed to initialize key rotation manager.', { message });
       }
+    } else {
+      this.log('debug', 'Key rotation disabled or not configured for Google provider.');
     }
   }
 
   private async ensureClient(): Promise<void> {
     if (!this.keyRotationManager) {
+      this.log('debug', 'Skipping ensureClient; key rotation not configured.');
       return;
     }
+    this.log('debug', 'Ensuring Google client uses latest rotated key.');
     try {
       const activeKey = await this.keyRotationManager.getActiveKey();
+      this.log('debug', 'Retrieved active key from rotation manager.', {
+        keySuffix: activeKey?.slice(-6),
+      });
       if (activeKey && activeKey !== this.currentApiKey) {
         this.client = new GoogleGenerativeAI(activeKey);
         this.currentApiKey = activeKey;
-        this.logger?.info?.('GoogleAdapter refreshed client with rotated API key.', {
+        this.log('info', 'Refreshed Google client with rotated API key.', {
           keySuffix: activeKey.slice(-6),
         });
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.logger?.error?.('Failed to acquire Google API key from rotation manager.', { message });
+      this.log('error', 'Failed to acquire API key from rotation manager.', { message });
     }
   }
 
   private async recordUsage(result: 'success' | 'rate-limit'): Promise<void> {
     if (!this.keyRotationManager) {
+      this.log('debug', 'recordUsage skipped; key rotation not configured.', { result });
       return;
     }
     try {
+      this.log('debug', 'Recording usage event for key rotation.', { result });
       if (result === 'success') {
         await this.keyRotationManager.markSuccess();
       } else {
@@ -89,7 +108,7 @@ export class GoogleAdapter implements IProviderAdapter {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.logger?.warn?.('Failed to update key rotation usage for GoogleAdapter.', { result, message });
+      this.log('warn', 'Failed to update key rotation usage.', { result, message });
     }
   }
 
@@ -208,6 +227,7 @@ export class GoogleAdapter implements IProviderAdapter {
       if (this.isRateLimitError(error)) {
         await this.recordUsage('rate-limit');
       }
+      this.log('error', 'Generate request failed.', { message: error.message });
       return { status: 'failed', provider: 'google', model: modelId, error: error.message };
     }
   }
@@ -274,6 +294,7 @@ export class GoogleAdapter implements IProviderAdapter {
         if (this.isRateLimitError(error)) {
           await this.recordUsage('rate-limit');
         }
+        this.log('error', 'Stream generation failed.', { message: error.message });
         yield { status: 'error', provider: 'google', model: modelId, error: error.message };
     }
   }
@@ -311,6 +332,7 @@ export class GoogleAdapter implements IProviderAdapter {
       if (this.isRateLimitError(error)) {
         await this.recordUsage('rate-limit');
       }
+      this.log('error', 'countTokens failed.', { message: error.message });
       return { success: false, error: error.message };
     }
   }
@@ -356,7 +378,46 @@ export class GoogleAdapter implements IProviderAdapter {
         if (this.isRateLimitError(error)) {
           await this.recordUsage('rate-limit');
         }
+        this.log('error', 'embedContent failed.', { message: error.message });
         return { success: false, error: error.message };
+    }
+  }
+
+  private log(
+    level: 'debug' | 'info' | 'warn' | 'error',
+    message: string,
+    context?: Record<string, unknown>,
+  ): void {
+    const prefix = 'GoogleAdapter (src/adapters/google.ts)';
+    const fullMessage = `${prefix}: ${message}`;
+    switch (level) {
+      case 'debug':
+        if (!this.debug) {
+          break;
+        }
+        if (this.logger?.debug) {
+          this.logger.debug(fullMessage, context);
+        } else {
+          this.logger?.info?.(fullMessage, context);
+        }
+        break;
+      case 'info':
+        this.logger?.info?.(fullMessage, context);
+        break;
+      case 'warn':
+        if (this.logger?.warn) {
+          this.logger.warn(fullMessage, context);
+        } else {
+          this.logger?.info?.(fullMessage, context);
+        }
+        break;
+      case 'error':
+        if (this.logger?.error) {
+          this.logger.error(fullMessage, context);
+        } else {
+          this.logger?.info?.(fullMessage, context);
+        }
+        break;
     }
   }
 }
