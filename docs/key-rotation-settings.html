@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Key Rotation Settings - AI Orchestrator SDK</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        code, .code-block { font-family: 'Fira Code', monospace; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .nav-link { transition: all 0.2s ease-in-out; }
+        .nav-link.active { color: #0ea5e9; border-bottom-color: #0ea5e9; }
+        .nav-link:not(.active):hover { color: #38bdf8; border-bottom-color: #e5e7eb; }
+        .code-block {
+            background-color: #1e293b;
+            color: #e2e8f0;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            overflow-x: auto;
+            position: relative;
+        }
+        .copy-btn {
+            position: absolute;
+            top: 0.5rem;
+            right: 0.5rem;
+            background-color: #334155;
+            color: #94a3b8;
+            border: none;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            cursor: pointer;
+            font-size: 0.75rem;
+            transition: all 0.2s ease;
+        }
+        .copy-btn:hover { background-color: #475569; color: #cbd5e1; }
+        .setting-card {
+            background-color: #f8fafc;
+            border-left: 4px solid #0ea5e9;
+            padding: 1.25rem;
+            margin-bottom: 1.5rem;
+            border-radius: 0.5rem;
+            transition: all 0.2s ease;
+        }
+        .setting-card:hover {
+            background-color: #f1f5f9;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .badge-required { background-color: #fecaca; color: #991b1b; }
+        .badge-optional { background-color: #dbeafe; color: #1e40af; }
+        .badge-default { background-color: #e0e7ff; color: #3730a3; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+    <div class="container mx-auto p-4 md:p-8">
+        
+        <!-- Header -->
+        <header class="text-center mb-10">
+            <h1 class="text-4xl md:text-5xl font-bold text-slate-900">Key Rotation Settings</h1>
+            <p class="text-slate-600 mt-2 text-lg">Complete reference for configuring automatic API key rotation</p>
+            <div class="mt-4">
+                <a href="index.html" class="text-sky-500 hover:text-sky-600 underline">← Back to Main Documentation</a>
+            </div>
+        </header>
+
+        <!-- Navigation -->
+        <nav class="sticky top-0 bg-white/80 backdrop-blur-md z-10 border-b border-slate-200 mb-8">
+            <div class="flex items-center justify-center space-x-4 sm:space-x-8 text-sm sm:text-base font-medium text-slate-600">
+                <a href="#" class="nav-link active border-b-2 border-transparent py-4 px-2" data-tab="core">Core Settings</a>
+                <a href="#" class="nav-link border-b-2 border-transparent py-4 px-2" data-tab="timebased">Time-Based</a>
+                <a href="#" class="nav-link border-b-2 border-transparent py-4 px-2" data-tab="retry">Retry & Resilience</a>
+                <a href="#" class="nav-link border-b-2 border-transparent py-4 px-2" data-tab="renewal">Key Renewal</a>
+                <a href="#" class="nav-link border-b-2 border-transparent py-4 px-2" data-tab="examples">Examples</a>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main>
+            <!-- Core Settings Tab -->
+            <section id="core" class="tab-content active">
+                <div class="bg-white p-6 md:p-8 rounded-lg shadow-sm">
+                    <h2 class="text-2xl font-bold text-slate-900 mb-6">Core Settings</h2>
+                    <p class="text-slate-600 mb-8">These are the fundamental settings that control basic key rotation behavior.</p>
+
+                    <!-- enabled -->
+                    <div class="setting-card">
+                        <div class="flex items-start justify-between mb-3">
+                            <div>
+                                <h3 class="text-lg font-semibold text-slate-900 inline-block">enabled</h3>
+                                <span class="ml-2 badge badge-optional">Optional</span>
+                                <span class="ml-2 badge badge-default">Default: true</span>
+                            </div>
+                            <code class="text-sm bg-slate-200 px-2 py-1 rounded">boolean</code>
+                        </div>
+                        <p class="text-slate-600 mb-3"><strong>What it does:</strong> Master on/off switch for the entire key rotation feature.</p>
+                        <div class="code-block">
+                            <button class="copy-btn">Copy</button>
+<code>keyRotation: {
+  enabled: false  // Completely disables rotation
+}</code>
+                        </div>
+                    </div>
+
+                    <!-- usageLimit -->
+                    <div class="setting-card">
+                        <div class="flex items-start justify-between mb-3">
+                            <div>
+                                <h3 class="text-lg font-semibold text-slate-900 inline-block">usageLimit</h3>
+                                <span class="ml-2 badge badge-required">Required</span>
+                            </div>
+                            <code class="text-sm bg-slate-200 px-2 py-1 rounded">number</code>
+                        </div>
+                        <p class="text-slate-600 mb-3"><strong>What it does:</strong> Number of <strong>successful</strong> API requests before automatically rotating to the next key.</p>
+                        <p class="text-slate-500 text-sm mb-3">⚠️ Only successful requests count. Failed requests don't increment the counter.</p>
+                        <div class="code-block">
+                            <button class="copy-btn">Copy</button>
+<code>keyRotation: {
+  usageLimit: 100  // Rotate after 100 successful requests
+}</code>
+                        </div>
+                    </div>
+
+                    <!-- additionalKeys -->
+                    <div class="setting-card">
+                        <div class="flex items-start justify-between mb-3">
+                            <div>
+                                <h3 class="text-lg font-semibold text-slate-900 inline-block">additionalKeys</h3>
+                                <span class="ml-2 badge badge-optional">Optional</span>
+                                <span class="ml-2 badge badge-default">Default: []</span>
+                            </div>
+                            <code class="text-sm bg-slate-200 px-2 py-1 rounded">string[]</code>
+                        </div>
+                        <p class="text-slate-600 mb-3"><strong>What it does:</strong> Additional API keys to rotate through (beyond the main <code class="bg-slate-200 px-1 rounded">apiKey</code>).</p>
+                        <p class="text-slate-500 text-sm mb-3">📝 Rotation order: key-1 → key-2 → key-3 → key-4 → key-1 (cycles back)</p>
+                        <div class="code-block">
+                            <button class="copy-btn">Copy</button>
+<code>apiKey: 'key-1',  // Main key (always included)
+keyRotation: {
+  usageLimit: 100,
+  additionalKeys: ['key-2', 'key-3', 'key-4']  // 4 total keys
+}</code>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Time-Based Settings Tab -->
+            <section id="timebased" class="tab-content">
+                <div class="bg-white p-6 md:p-8 rounded-lg shadow-sm">
+                    <h2 class="text-2xl font-bold text-slate-900 mb-6">Time-Based Settings</h2>
+                    <p class="text-slate-600 mb-8">Configure time windows and cooldown periods for more sophisticated rotation strategies.</p>
+
+                    <!-- usageWindowMs -->
+                    <div class="setting-card">
+                        <div class="flex items-start justify-between mb-3">
+                            <div>
+                                <h3 class="text-lg font-semibold text-slate-900 inline-block">usageWindowMs</h3>
+                                <span class="ml-2 badge badge-optional">Optional</span>
+                                <span class="ml-2 badge badge-default">Default: undefined</span>
+                            </div>
+                            <code class="text-sm bg-slate-200 px-2 py-1 rounded">number</code>
+                        </div>
+                        <p class="text-slate-600 mb-3"><strong>What it does:</strong> Time window for usage counting (in milliseconds). After this time expires, the usage count for a key resets to 0.</p>
+                        <p class="text-slate-500 text-sm mb-3">💡 Perfect for providers with hourly/daily quotas!</p>
+                        <div class="code-block">
+                            <button class="copy-btn">Copy</button>
+<code>keyRotation: {
+  usageLimit: 1000,
+  usageWindowMs: 60 * 60 * 1000  // 1 hour = 3,600,000 ms
+}
+
+// Behavior: Each key can make 1000 requests per hour.
+// After 1 hour, it can make another 1000.</code>
+                        </div>
+                        <p class="text-slate-500 text-sm mt-3">⚠️ Without this setting: Once a key hits the limit, it won't reset until you cycle through all keys.</p>
+                    </div>
+
+                    <!-- cooldownMs -->
+                    <div class="setting-card">
+                        <div class="flex items-start justify-between mb-3">
+                            <div>
+                                <h3 class="text-lg font-semibold text-slate-900 inline-block">cooldownMs</h3>
+                                <span class="ml-2 badge badge-optional">Optional</span>
+                                <span class="ml-2 badge badge-default">Default: undefined</span>
+                            </div>
+                            <code class="text-sm bg-slate-200 px-2 py-1 rounded">number</code>
+                        </div>
+                        <p class="text-slate-600 mb-3"><strong>What it does:</strong> Waiting period (in milliseconds) before reusing an exhausted key when all keys are depleted.</p>
+                        <div class="code-block">
+                            <button class="copy-btn">Copy</button>
+<code>keyRotation: {
+  usageLimit: 100,
+  cooldownMs: 5 * 60 * 1000  // 5 minutes = 300,000 ms
+}
+
+// Behavior:
+// 1. All 3 keys reach their limit
+// 2. Manager waits 5 minutes
+// 3. Resets usage and allows requests again</code>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Retry & Resilience Tab -->
+            <section id="retry" class="tab-content">
+                <div class="bg-white p-6 md:p-8 rounded-lg shadow-sm">
+                    <h2 class="text-2xl font-bold text-slate-900 mb-6">Retry & Resilience Settings</h2>
+                    <p class="text-slate-600 mb-8">Control retry behavior when fetching new keys from renewal endpoints.</p>
+
+                    <!-- retryAttempts -->
+                    <div class="setting-card">
+                        <div class="flex items-start justify-between mb-3">
+                            <div>
+                                <h3 class="text-lg font-semibold text-slate-900 inline-block">retryAttempts</h3>
+                                <span class="ml-2 badge badge-optional">Optional</span>
+                                <span class="ml-2 badge badge-default">Default: 3</span>
+                            </div>
+                            <code class="text-sm bg-slate-200 px-2 py-1 rounded">number</code>
+                        </div>
+                        <p class="text-slate-600 mb-3"><strong>What it does:</strong> Number of retry attempts when fetching a new key from the renewal endpoint.</p>
+                        <p class="text-slate-500 text-sm mb-3">📌 Only used when <code class="bg-slate-200 px-1 rounded">renewal</code> is configured.</p>
+                        <div class="code-block">
+                            <button class="copy-btn">Copy</button>
+<code>keyRotation: {
+  usageLimit: 100,
+  retryAttempts: 5,  // Try 5 times before giving up
+  renewal: { /* ... */ }
+}</code>
+                        </div>
+                    </div>
+
+                    <!-- retryDelayMs -->
+                    <div class="setting-card">
+                        <div class="flex items-start justify-between mb-3">
+                            <div>
+                                <h3 class="text-lg font-semibold text-slate-900 inline-block">retryDelayMs</h3>
+                                <span class="ml-2 badge badge-optional">Optional</span>
+                                <span class="ml-2 badge badge-default">Default: 500</span>
+                            </div>
+                            <code class="text-sm bg-slate-200 px-2 py-1 rounded">number</code>
+                        </div>
+                        <p class="text-slate-600 mb-3"><strong>What it does:</strong> Delay (in milliseconds) between retry attempts when renewal fails.</p>
+                        <div class="code-block">
+                            <button class="copy-btn">Copy</button>
+<code>keyRotation: {
+  usageLimit: 100,
+  retryAttempts: 3,
+  retryDelayMs: 2000,  // Wait 2 seconds between each retry
+  renewal: { /* ... */ }
+}</code>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Key Renewal Tab -->
+            <section id="renewal" class="tab-content">
+                <div class="bg-white p-6 md:p-8 rounded-lg shadow-sm">
+                    <h2 class="text-2xl font-bold text-slate-900 mb-6">Key Renewal Configuration</h2>
+                    <p class="text-slate-600 mb-8">Dynamically fetch new API keys from an HTTP endpoint when all keys are exhausted.</p>
+
+                    <!-- renewal -->
+                    <div class="setting-card">
+                        <div class="flex items-start justify-between mb-3">
+                            <div>
+                                <h3 class="text-lg font-semibold text-slate-900 inline-block">renewal</h3>
+                                <span class="ml-2 badge badge-optional">Optional</span>
+                                <span class="ml-2 badge badge-default">Default: undefined</span>
+                            </div>
+                            <code class="text-sm bg-slate-200 px-2 py-1 rounded">KeyRenewalConfig</code>
+                        </div>
+                        <p class="text-slate-600 mb-3"><strong>What it does:</strong> Configuration object for fetching new API keys from an HTTP endpoint when all keys are exhausted.</p>
+                        <div class="code-block">
+                            <button class="copy-btn">Copy</button>
+<code>keyRotation: {
+  usageLimit: 100,
+  additionalKeys: ['key-2'],
+  renewal: {
+    endpoint: 'https://your-backend.com/api/get-key',
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer your-service-token'
+    },
+    body: {
+      service: 'openai',
+      environment: 'production'
+    },
+    keyPath: 'data.apiKey',  // Extract from: { data: { apiKey: "..." } }
+    timeoutMs: 10000  // 10 second timeout
+  }
+}</code>
+                        </div>
+                    </div>
+
+                    <h3 class="text-xl font-bold text-slate-900 mt-8 mb-4">Renewal Sub-Properties</h3>
+
+                    <!-- endpoint -->
+                    <div class="setting-card">
+                        <div class="flex items-start justify-between mb-3">
+                            <div>
+                                <h3 class="text-lg font-semibold text-slate-900 inline-block">endpoint</h3>
+                                <span class="ml-2 badge badge-required">Required</span>
+                            </div>
+                            <code class="text-sm bg-slate-200 px-2 py-1 rounded">string</code>
+                        </div>
+                        <p class="text-slate-600 mb-3">URL to fetch new API keys from.</p>
+                        <div class="code-block">
+                            <button class="copy-btn">Copy</button>
+<code>endpoint: 'https://api.yourcompany.com/keys/generate'</code>
+                        </div>
+                    </div>
+
+                    <!-- method -->
+                    <div class="setting-card">
+                        <div class="flex items-start justify-between mb-3">
+                            <div>
+                                <h3 class="text-lg font-semibold text-slate-900 inline-block">method</h3>
+                                <span class="ml-2 badge badge-optional">Optional</span>
+                                <span class="ml-2 badge badge-default">Default: 'GET'</span>
+                            </div>
+                            <code class="text-sm bg-slate-200 px-2 py-1 rounded">'GET' | 'POST'</code>
+                        </div>
+                        <p class="text-slate-600 mb-3">HTTP method for the renewal request.</p>
+                        <div class="code-block">
+                            <button class="copy-btn">Copy</button>
+<code>method: 'POST'</code>
+                        </div>
+                    </div>
+
+                    <!-- headers -->
+                    <div class="setting-card">
+                        <div class="flex items-start justify-between mb-3">
+                            <div>
+                                <h3 class="text-lg font-semibold text-slate-900 inline-block">headers</h3>
+                                <span class="ml-2 badge badge-optional">Optional</span>
+                            </div>
+                            <code class="text-sm bg-slate-200 px-2 py-1 rounded">Record&lt;string, string&gt;</code>
+                        </div>
+                        <p class="text-slate-600 mb-3">Custom headers for authentication.</p>
+                        <div class="code-block">
+                            <button class="copy-btn">Copy</button>
+<code>headers: {
+  'Authorization': 'Bearer token123',
+  'X-Custom-Header': 'value'
+}</code>
+                        </div>
+                    </div>
+
+                    <!-- body -->
+                    <div class="setting-card">
+                        <div class="flex items-start justify-between mb-3">
+                            <div>
+                                <h3 class="text-lg font-semibold text-slate-900 inline-block">body</h3>
+                                <span class="ml-2 badge badge-optional">Optional</span>
+                            </div>
+                            <code class="text-sm bg-slate-200 px-2 py-1 rounded">any</code>
+                        </div>
+                        <p class="text-slate-600 mb-3">Request body (for POST requests).</p>
+                        <div class="code-block">
+                            <button class="copy-btn">Copy</button>
+<code>body: {
+  provider: 'openai',
+  purpose: 'production'
+}</code>
+                        </div>
+                    </div>
+
+                    <!-- keyPath -->
+                    <div class="setting-card">
+                        <div class="flex items-start justify-between mb-3">
+                            <div>
+                                <h3 class="text-lg font-semibold text-slate-900 inline-block">keyPath</h3>
+                                <span class="ml-2 badge badge-optional">Optional</span>
+                                <span class="ml-2 badge badge-default">Default: 'apiKey'</span>
+                            </div>
+                            <code class="text-sm bg-slate-200 px-2 py-1 rounded">string</code>
+                        </div>
+                        <p class="text-slate-600 mb-3">JSON path to extract the key from response (supports nested paths and arrays).</p>
+                        <div class="code-block">
+                            <button class="copy-btn">Copy</button>
+<code>// For response: { data: { apiKey: "sk-..." } }
+keyPath: 'data.apiKey'
+
+// For response: { keys: [{ value: "sk-..." }] }
+keyPath: 'keys[0].value'</code>
+                        </div>
+                    </div>
+
+                    <!-- timeoutMs -->
+                    <div class="setting-card">
+                        <div class="flex items-start justify-between mb-3">
+                            <div>
+                                <h3 class="text-lg font-semibold text-slate-900 inline-block">timeoutMs</h3>
+                                <span class="ml-2 badge badge-optional">Optional</span>
+                            </div>
+                            <code class="text-sm bg-slate-200 px-2 py-1 rounded">number</code>
+                        </div>
+                        <p class="text-slate-600 mb-3">Request timeout in milliseconds.</p>
+                        <div class="code-block">
+                            <button class="copy-btn">Copy</button>
+<code>timeoutMs: 15000  // 15 second timeout</code>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Examples Tab -->
+            <section id="examples" class="tab-content">
+                <div class="bg-white p-6 md:p-8 rounded-lg shadow-sm">
+                    <h2 class="text-2xl font-bold text-slate-900 mb-6">Practical Examples</h2>
+
+                    <div class="mb-8">
+                        <h3 class="text-xl font-semibold text-slate-900 mb-3">Example 1: Simple Round-Robin Rotation</h3>
+                        <p class="text-slate-600 mb-4">Most common use case - distribute load evenly across multiple keys.</p>
+                        <div class="code-block">
+                            <button class="copy-btn">Copy</button>
+<code>keyRotation: {
+  usageLimit: 100,
+  additionalKeys: ['key-2', 'key-3']
+}
+
+// Flow:
+// - First 100 requests use key-1
+// - Next 100 requests use key-2
+// - Next 100 requests use key-3
+// - Then back to key-1</code>
+                        </div>
+                    </div>
+
+                    <div class="mb-8">
+                        <h3 class="text-xl font-semibold text-slate-900 mb-3">Example 2: Time-Windowed Usage Limits</h3>
+                        <p class="text-slate-600 mb-4">Perfect for hourly or daily API quotas.</p>
+                        <div class="code-block">
+                            <button class="copy-btn">Copy</button>
+<code>keyRotation: {
+  usageLimit: 1000,
+  usageWindowMs: 60 * 60 * 1000,  // 1 hour
+  additionalKeys: ['key-2', 'key-3']
+}
+
+// Behavior:
+// - Each key can make 1000 requests per hour
+// - After 1 hour, usage count resets
+// - Allows sustained high throughput</code>
+                        </div>
+                    </div>
+
+                    <div class="mb-8">
+                        <h3 class="text-xl font-semibold text-slate-900 mb-3">Example 3: With Cooldown Period</h3>
+                        <p class="text-slate-600 mb-4">Wait before reusing exhausted keys.</p>
+                        <div class="code-block">
+                            <button class="copy-btn">Copy</button>
+<code>keyRotation: {
+  usageLimit: 50,
+  cooldownMs: 10 * 60 * 1000,  // 10 minutes
+  additionalKeys: ['key-2', 'key-3', 'key-4', 'key-5']
+}
+
+// Behavior:
+// - Each key handles 50 requests
+// - If all 5 keys exhausted, wait 10 minutes
+// - Then reuse with reset counters</code>
+                        </div>
+                    </div>
+
+                    <div class="mb-8">
+                        <h3 class="text-xl font-semibold text-slate-900 mb-3">Example 4: Dynamic Key Renewal</h3>
+                        <p class="text-slate-600 mb-4">Fetch new keys from your backend when needed.</p>
+                        <div class="code-block">
+                            <button class="copy-btn">Copy</button>
+<code>keyRotation: {
+  usageLimit: 500,
+  additionalKeys: ['key-2'],
+  retryAttempts: 5,
+  retryDelayMs: 1000,
+  renewal: {
+    endpoint: 'https://api.yourcompany.com/keys/generate',
+    method: 'POST',
+    headers: {
+      'X-API-Token': 'your-internal-token'
+    },
+    keyPath: 'key',
+    timeoutMs: 15000
+  }
+}
+
+// Behavior:
+// - Start with 2 keys
+// - When both exhausted, fetch new key from endpoint
+// - Retry up to 5 times with 1 second delay
+// - Add new key to pool and continue rotating</code>
+                        </div>
+                    </div>
+
+                    <div class="mb-8">
+                        <h3 class="text-xl font-semibold text-slate-900 mb-3">Example 5: Complete Configuration</h3>
+                        <p class="text-slate-600 mb-4">All settings working together.</p>
+                        <div class="code-block">
+                            <button class="copy-btn">Copy</button>
+<code>const orchestrator = new AIOrchestrator({
+  providers: [
+    {
+      name: 'openai',
+      apiKey: 'sk-key-1',
+      models: [
+        { id: 'gpt-4o-mini', type: 'text', cost: 0.15, quality: 'high' }
+      ],
+      keyRotation: {
+        enabled: true,
+        usageLimit: 1000,
+        usageWindowMs: 3600000,    // 1 hour
+        cooldownMs: 300000,        // 5 minutes
+        retryAttempts: 3,
+        retryDelayMs: 2000,
+        additionalKeys: [
+          'sk-key-2', 'sk-key-3', 'sk-key-4', 'sk-key-5'
+        ],
+        renewal: {
+          endpoint: 'https://api.internal.com/keys',
+          method: 'GET',
+          headers: { 'Authorization': 'Bearer token' },
+          keyPath: 'apiKey',
+          timeoutMs: 10000
+        }
+      }
+    }
+  ]
+});</code>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+
+        <!-- Footer -->
+        <footer class="mt-16 text-center text-slate-500 text-sm">
+            <p>&copy; 2024 AI Orchestrator SDK. Licensed under MIT.</p>
+            <p class="mt-2">
+                <a href="index.html" class="text-sky-500 hover:text-sky-600">Main Documentation</a> • 
+                <a href="KEY_ROTATION.md" class="text-sky-500 hover:text-sky-600">Full Key Rotation Guide</a>
+            </p>
+        </footer>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // Tab Navigation
+            const tabs = document.querySelectorAll('.nav-link');
+            const contents = document.querySelectorAll('.tab-content');
+
+            tabs.forEach(tab => {
+                tab.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const targetId = tab.dataset.tab;
+
+                    // Update active states
+                    tabs.forEach(t => t.classList.remove('active'));
+                    contents.forEach(c => c.classList.remove('active'));
+                    
+                    tab.classList.add('active');
+                    document.getElementById(targetId).classList.add('active');
+                });
+            });
+
+            // Copy to Clipboard
+            document.querySelectorAll('.copy-btn').forEach(button => {
+                button.addEventListener('click', () => {
+                    const codeBlock = button.nextElementSibling;
+                    const text = codeBlock.textContent;
+                    
+                    navigator.clipboard.writeText(text).then(() => {
+                        button.textContent = 'Copied!';
+                        setTimeout(() => {
+                            button.textContent = 'Copy';
+                        }, 2000);
+                    }).catch(err => {
+                        console.error('Failed to copy text: ', err);
+                    });
+                });
+            });
+        });
+    </script>
+</body>
+</html>
+

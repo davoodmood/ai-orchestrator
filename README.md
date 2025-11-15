@@ -167,71 +167,30 @@ const highQualityImage = await orchestrator.generate({
   quality: 'high' // Will only consider models marked as 'high' quality
 });
 
-## Adapter Key Rotation Guidelines
+### API Key Rotation
 
-Every built-in adapter now understands usage-based key rotation automatically. When you create a new adapter, follow these steps so the feature works out of the box—even for junior developers:
-
-1. **Accept `ProviderConfig` and `logger`:** The orchestrator injects `keyRotation` settings and a logger into adapter constructors. Keep those arguments and pass the logger to the `KeyRotationManager`.
-2. **Instantiate the manager:**  
-   ```typescript
-   this.keyRotationManager = new KeyRotationManager({
-     initialKey: providerConfig.apiKey,
-     config: providerConfig.keyRotation!,
-     logger: this.logger,
-   });
-   ```
-   Wrap this in a try/catch and fall back gracefully if rotation is disabled or misconfigured.
-3. **Resolve the active key per request:** Before building headers, call `await this.keyRotationManager.getActiveKey()` and use the returned value instead of hard-coding `providerConfig.apiKey`.
-4. **Record outcomes:**  
-   - On successful responses (including streaming completions), call `await this.keyRotationManager.markSuccess()`.  
-   - When you detect a 429 or the provider reports a rate-limit error, call `await this.keyRotationManager.markRateLimit()`.
-   - If you retry the same failing request, only record the rate-limit once (track with a boolean flag for that attempt).
-5. **Handle client refresh:** If your SDK client keeps the API key internally (like OpenAI/Google SDKs), add a helper that re-instantiates the client when `getActiveKey()` returns a different key.
-6. **Error handling:** If key renewal endpoints are configured and fail, the manager automatically retries and falls back to the previous key, so you just need to propagate the original API error.
-7. **Testing tips:**  
-   - Mock the manager when unit-testing adapters, or rely on the real one to verify rotation.  
-   - Include tests for: rotation on usage limit, rotation on rate limits, and concurrent calls (the manager handles locking).
-
-### Example skeleton for a custom adapter
+**ai-orchestrator** includes automatic API key rotation to help you avoid rate limits and maximize throughput. Simply provide multiple API keys in your configuration:
 
 ```typescript
-export class MyAdapter implements IProviderAdapter {
-  private keyRotation?: KeyRotationManager;
-
-  constructor(private config: ProviderConfig, private logger = console) {
-    if (config.keyRotation?.enabled !== false) {
-      try {
-        this.keyRotation = new KeyRotationManager({
-          initialKey: config.apiKey,
-          config: config.keyRotation,
-          logger,
-        });
-      } catch (error) {
-        logger.warn('Key rotation disabled', { message: (error as Error).message });
-      }
-    }
-  }
-
-  private async getApiKey(): Promise<string | undefined> {
-    return this.keyRotation ? this.keyRotation.getActiveKey() : this.config.apiKey;
-  }
-
-  async generate(request: GenerateRequest, modelId: string): Promise<GenerateResult> {
-    const apiKey = await this.getApiKey();
-    // build headers using apiKey ...
-    try {
-      const response = await callProvider();
-      await this.keyRotation?.markSuccess();
-      return response;
-    } catch (error) {
-      if (isRateLimit(error)) {
-        await this.keyRotation?.markRateLimit();
-      }
-      throw error;
-    }
-  }
+keyRotation: {
+  enabled: true,
+  usageLimit: 100,  // Rotate after 100 requests
+  additionalKeys: ['key-2', 'key-3']
 }
 ```
+
+**Key Features:**
+- ✅ Automatic rotation on usage limits
+- ✅ Automatic failover on rate-limit errors (429)
+- ✅ Dynamic key renewal from your backend
+- ✅ Thread-safe for concurrent requests
+- ✅ Configurable cooldown periods and time windows
+
+**📖 [Complete Key Rotation Guide](./docs/KEY_ROTATION.md)**
+
+### For Adapter Developers
+
+If you're building a custom adapter, see the [Adapter Key Rotation Guidelines](./docs/KEY_ROTATION.md#adapter-developer-guide) for implementation details
 -----
 ## Contributing
 Contributions are welcome! Please feel free to submit a pull request or open an issue.
