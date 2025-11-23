@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Video Orchestrator</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>AI Video Orchestrator</h1>
+            <div id="status-bar">Status: <span id="project-status">Wait</span></div>
+        </header>
+
+        <section id="setup-section">
+            <h2>New Project</h2>
+            <button id="init-btn">Initialize Project</button>
+            <div id="concept-form" class="hidden">
+                <textarea id="concept-input" placeholder="Describe your ad campaign concept..."></textarea>
+                <button id="generate-btn">Generate Draft</button>
+            </div>
+        </section>
+
+        <section id="workspace-section" class="hidden">
+            <h2>Shot List</h2>
+            <div id="shot-list-container">
+                <!-- Shots will be rendered here -->
+            </div>
+            <div class="actions">
+                <button id="render-btn">Commit & Render All</button>
+            </div>
+        </section>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>

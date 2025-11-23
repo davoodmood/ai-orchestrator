@@ -1,286 +1,96 @@
-import { createHash } from 'crypto';
-import { OrchestratorConfig, GenerateRequest, GenerateResult, ProviderConfig, ModelConfig, JobStatusResult, IProviderAdapter, CountTokensRequest, CountTokensResponse, GenerateStreamRequest, StreamGenerateResult, EmbedContentRequest, EmbedContentResponse } from './types';
-import { OpenAIAdapter } from './adapters/openai';
-import { GoogleAdapter } from './adapters/google';
-import { CustomAdapter } from './adapters/custom';
-// import { AnthropicAdapter } from './adapters/anthropic';
-// import { DeepSeekAdapter } from './adapters/deepseek';
+import express from 'express';
+import cors from 'cors';
+import path from 'path';
+import { FileSystemProjectRepository } from './infrastructure/persistence/FileSystemProjectRepository';
+import { MockAIAdapter } from './infrastructure/ai/MockAIAdapter';
+import { MockVeoAdapter } from './infrastructure/video/MockVeoAdapter';
+import { InitializeProject } from './application/commands/InitializeProject';
+import { GenerateDraft } from './application/commands/GenerateDraft';
+import { UpdateShotInstruction } from './application/commands/UpdateShotInstruction';
+import { UpdateShotManual } from './application/commands/UpdateShotManual';
+import { CommitAndRender } from './application/commands/CommitAndRender';
 
-interface ActiveJob {
-    providerName: string;
-    providerJobId: string;
-}
+const app = express();
+const port = 3000;
 
-export class AIOrchestrator {
-    private config: OrchestratorConfig;
-    private adapters: Map<string, IProviderAdapter> = new Map();
-    private logger: any;
-    private activeJobs: Map<string, ActiveJob> = new Map();
-  
-    constructor(config: OrchestratorConfig) {
-      this.config = config;
-      this.logger = config.logger || console;
-  
-      this.initializeAdapters();
-      this.logger.info('AIOrchestrator initialized.');
-    }
-  
-    private initializeAdapters() {
-      // ... (adapter initialization logic remains the same)
-      for (const provider of this.config.providers) {
-        switch (provider.name.toLowerCase()) {
-          case 'openai': this.adapters.set('openai', new OpenAIAdapter(provider.apiKey)); break;
-          case 'google': this.adapters.set('google', new GoogleAdapter(provider.apiKey)); break;
-          // case 'anthropic': this.adapters.set('anthropic', new AnthropicAdapter(provider.apiKey)); break;
-          // case 'deepseek': this.adapters.set('deepseek', new DeepSeekAdapter(provider.apiKey)); break;
-          case 'custom':
-            if (provider.baseUrl) {
-              this.adapters.set('custom', new CustomAdapter(provider));
-            } else { this.logger.error('Custom provider requires a `baseUrl`.'); }
-            break;
-          default: this.logger.warn(`No adapter found for provider: ${provider.name}`);
-        }
-      }
-    }
-  
-    public async generate(request: GenerateRequest): Promise<GenerateResult> {
-      // this.logger.info(`Received generate request: ${JSON.stringify(request)}`);
-      const candidateProviders = this.getSortedProviders(request);
-  
-      if (candidateProviders.length === 0) {
-        return { status: 'failed', provider: 'none', model: 'none', error: 'No suitable provider found.' };
-      }
-  
-      for (const { provider, model } of candidateProviders) {
-        const adapter = this.adapters.get(provider.name);
-        if (!adapter) {
-          this.logger.error(`Adapter not initialized for provider: ${provider.name}`);
-          continue;
-        }
-        
-        try {
-          this.logger.info(`Attempting to generate with ${provider.name} using model ${model.id}`);
-          const result = await adapter.generate(request, model.id);
-  
-          if (result.status === 'pending' && result.orchestratorJobId) {
-            // The adapter returned a job ID. Store it for polling.
-            const orchestratorJobId = this.createOrchestratorJobId(provider.name, result.orchestratorJobId);
-            this.activeJobs.set(orchestratorJobId, {
-              providerName: provider.name,
-              providerJobId: result.orchestratorJobId,
-            });
-            this.logger.info(`Started async job with ${provider.name}. Orchestrator Job ID: ${orchestratorJobId}`);
-            return { ...result, orchestratorJobId };
-          }
-          
-          if (result.status === 'completed') {
-            this.logger.info(`Successfully generated content with ${provider.name}`);
-            return result;
-          }
-  
-          this.logger.warn(`Generation failed with ${provider.name}: ${result.error}. Trying next provider.`);
-        } catch (error: any) {
-          this.logger.error(`Exception with provider ${provider.name}: ${error.message}. Trying next provider.`);
-        }
-      }
-  
-      return { status: 'failed', provider: 'none', model: 'none', error: 'All configured providers failed.' };
-    }
+app.use(cors());
+app.use(express.json());
+app.use(express.static(path.join(__dirname, '../examples')));
 
-    /**
-     * Generates content as a stream of chunks, yielding each part as it becomes available.
-     * Ideal for real-time applications like chatbots.
-     * @param request The generation request.
-     */
-    public async * generateStream(request: GenerateStreamRequest): AsyncGenerator<StreamGenerateResult> {
-      this.logger.info(`Received stream generate request: ${JSON.stringify(request)}`);
-      const candidateProviders = this.getSortedProviders(request).filter(({ model }) => model.supportsStreaming);
+// Dependencies
+const projectRepo = new FileSystemProjectRepository();
+const aiService = new MockAIAdapter();
+const videoRenderer = new MockVeoAdapter();
 
-      if (candidateProviders.length === 0) {
-          yield { status: 'error', provider: 'none', model: 'none', error: 'No suitable provider found.' };
-          return;
-      }
+// Use Cases
+const initializeProject = new InitializeProject(projectRepo);
+const generateDraft = new GenerateDraft(projectRepo, aiService);
+const updateShotInstruction = new UpdateShotInstruction(projectRepo, aiService);
+const updateShotManual = new UpdateShotManual(projectRepo);
+const commitAndRender = new CommitAndRender(projectRepo, videoRenderer);
 
-      let lastError = 'All configured providers failed or do not support streaming.';
-
-      for (const { provider, model } of candidateProviders) {
-          const adapter = this.adapters.get(provider.name);
-          if (!adapter) {
-              this.logger.error(`Adapter not initialized for provider: ${provider.name}`);
-              lastError = `Adapter not initialized for provider: ${provider.name}`;
-              continue;
-          }
-
-          // Check if the adapter supports the streaming method
-          if (!adapter.generateStream) {
-              this.logger.warn(`Provider ${provider.name} does not support streaming. Trying next provider.`);
-              lastError = `Provider ${provider.name} does not support streaming.`;
-              continue;
-          }
-
-          try {
-              this.logger.info(`Attempting to stream with ${provider.name} using model ${model.id}`);
-              // Yield all the chunks from the successful adapter stream
-              yield* adapter.generateStream(request, model.id);
-              // If the stream completes without errors, we are done.
-              return;
-          } catch (error: any) {
-              this.logger.error(`Exception during stream with ${provider.name}: ${error.message}. Trying next provider.`);
-              lastError = error.message;
-          }
-      }
-
-      // If all providers failed, yield a final error chunk.
-      yield { status: 'error', provider: 'none', model: 'none', error: lastError };
-    }
-
-    /**
-     * NEW: Generates vector embeddings for a batch of texts.
-     */
-    public async embedContent(request: EmbedContentRequest): Promise<EmbedContentResponse> {
-      const { provider, model } = this.getSortedProviders({ ...request, type: 'embedding' })[0] || {};
-  
-      if (!provider || !model) {
-          return { success: false, error: 'No suitable embedding provider found for the given criteria.' };
-      }
-  
-      const adapter = this.adapters.get(provider.name);
-      if (!adapter || !adapter.embedContent) {
-          return { success: false, error: `Provider '${provider.name}' does not support embedding.` };
-      }
-  
-      this.logger.info(`Attempting to embed content with ${provider.name} using model ${model.id}`);
-      try {
-          return await adapter.embedContent(request, model.id);
-      } catch (error: any) {
-          this.logger.error(`Exception during embedding with ${provider.name}: ${error.message}`);
-          return { success: false, error: error.message };
-      }
+// Routes
+app.post('/api/projects', async (req, res) => {
+  try {
+    const project = await initializeProject.execute();
+    res.json(project);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
   }
-    
-    public async getJobResult(orchestratorJobId: string): Promise<JobStatusResult> {
-      const job = this.activeJobs.get(orchestratorJobId);
-      if (!job) {
-        return { status: 'failed', error: 'Job not found or already completed.' };
-      }
-  
-      const adapter = this.adapters.get(job.providerName);
-      if (!adapter || !adapter.checkJobStatus) {
-        return { status: 'failed', error: `Provider '${job.providerName}' does not support job status checks.` };
-      }
-  
-      const result = await adapter.checkJobStatus(job.providerJobId);
-  
-      // If the job is finished (completed or failed), remove it from the active list.
-      if (result.status === 'completed' || result.status === 'failed') {
-        this.activeJobs.delete(orchestratorJobId);
-        this.logger.info(`Job ${orchestratorJobId} finished with status: ${result.status}.`);
-      }
-  
-      return result;
-    }
+});
 
-    private createOrchestratorJobId(providerName: string, providerJobId: string): string {
-      // Create a consistent, unique hash to use as our internal job ID.
-      return createHash('sha256').update(`${providerName}-${providerJobId}`).digest('hex');
-    }
-
-    private getSortedProviders(request: { type: ModelConfig['type']; strategy?: string | string[]; quality?: 'low' | 'medium' | 'high' }): { provider: ProviderConfig, model: ModelConfig }[] {
-      const { type, strategy = 'cost', quality } = request;
-      const strategies = Array.isArray(strategy) ? strategy : [strategy];
-
-      let candidates = this.config.providers
-          .flatMap(p => p.models.map(m => ({ provider: p, model: m })))
-          .filter(({ model }) => model.type === type);
-
-      if (quality) {
-          candidates = candidates.filter(({ model }) => model.quality === quality);
-      }
-
-      const qualityOrder = { 'high': 1, 'medium': 2, 'low': 3 };
-
-      // Multi-level sort based on the strategy array
-      candidates.sort((a, b) => {
-          for (const currentStrategy of strategies) {
-              let comparison = 0;
-              switch (currentStrategy) {
-                  case 'latency':
-                      comparison = (a.model.avg_latency_ms ?? Infinity) - (b.model.avg_latency_ms ?? Infinity);
-                      break;
-                  case 'quality':
-                      comparison = qualityOrder[a.model.quality] - qualityOrder[b.model.quality];
-                      break;
-                  case 'cost':
-                      comparison = a.model.cost - b.model.cost;
-                      break;
-              }
-              if (comparison !== 0) {
-                  return comparison;
-              }
-          }
-          return 0; // Return 0 if all strategies result in a tie
-      });
-
-      this.logger.info(`Provider priority list for strategy '${strategies.join(', ')}': ${candidates.map(c => `${c.provider.name}/${c.model.id}`).join(', ')}`);
-      return candidates;
-    }
-
-    /**
-     * Ends a specific chat session, releasing any in-memory resources associated with it.
-     * This should be called when a conversation is over to prevent memory leaks.
-     * @param sessionId The unique identifier for the session to end.
-     */
-    public async endChatSession(sessionId: string): Promise<void> {
-      this.logger.info(`Received request to end chat session: ${sessionId}`);
-      for (const adapter of this.adapters.values()) {
-          // Check if the adapter has implemented the session management method
-          if (adapter.endChatSession) {
-              await adapter.endChatSession(sessionId);
-          }
-      }
-    }
-
-    /**
-     * Counts the number of tokens for a given text using a specific provider's tokenizer.
-     * @param request The request containing the text, provider, and model.
-     * @returns A promise that resolves to the token count result.
-     */
-    public async countTokens(request: CountTokensRequest): Promise<CountTokensResponse> {
-      this.logger.info(`Received token count request for provider ${request.provider}`);
-      const adapter = this.adapters.get(request.provider);
-
-      if (!adapter) {
-          return { success: false, error: `No adapter found for provider: ${request.provider}` };
-      }
-
-      if (!adapter.countTokens) {
-          return { success: false, error: `Provider '${request.provider}' does not support token counting.` };
-      }
-
-      try {
-          return await adapter.countTokens(request);
-      } catch (error: any) {
-          this.logger.error(`Exception during token count with ${request.provider}: ${error.message}`);
-          return { success: false, error: error.message };
-      }
+app.post('/api/projects/:id/generate', async (req, res) => {
+  try {
+    const { concept } = req.body;
+    const project = await generateDraft.execute(req.params.id, concept);
+    res.json(project);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
   }
+});
 
-
-    // private getSortedProviders(request: GenerateRequest): { provider: ProviderConfig, model: ModelConfig }[] {
-    //   // ... (this logic remains the same)
-    //   const { type, strategy = 'cost', quality } = request;
-    //   let candidates = this.config.providers
-    //   .flatMap(p => p.models.map(m => ({ provider: p, model: m })))
-    //   .filter(({ model }) => model.type === type);
-    //   if (quality) { candidates = candidates.filter(({ model }) => model.quality === quality); }
-    //   switch (strategy) {
-    //       case 'latency': candidates.sort((a, b) => (a.model.avg_latency_ms ?? Infinity) - (b.model.avg_latency_ms ?? Infinity)); break;
-    //       case 'quality': const qualityOrder = { 'high': 1, 'medium': 2, 'low': 3 }; candidates.sort((a, b) => qualityOrder[a.model.quality] - qualityOrder[b.model.quality]); break;
-    //       case 'cost': default: candidates.sort((a, b) => a.model.cost - b.model.cost); break;
-    //   }
-    //   this.logger.info(`Provider priority list for strategy '${strategy}': ${candidates.map(c => `${c.provider.name}/${c.model.id}`).join(', ')}`);
-    //   return candidates;
-    // }
-
-    
+app.put('/api/projects/:id/shots/:shotId', async (req, res) => {
+  try {
+    const { instruction } = req.body;
+    const project = await updateShotInstruction.execute(req.params.id, req.params.shotId, instruction);
+    res.json(project);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
   }
+});
+
+app.patch('/api/projects/:id/shots/:shotId', async (req, res) => {
+  try {
+    const { visualPrompt } = req.body;
+    const project = await updateShotManual.execute(req.params.id, req.params.shotId, visualPrompt);
+    res.json(project);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/projects/:id/render', async (req, res) => {
+  try {
+    const project = await commitAndRender.execute(req.params.id);
+    res.json(project);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/projects/:id', async (req, res) => {
+    try {
+        const project = await projectRepo.findById(req.params.id);
+        if (!project) {
+            res.status(404).json({ error: 'Project not found' });
+            return;
+        }
+        res.json(project);
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.listen(port, () => {
+  console.log(`Server running at http://localhost:${port}`);
+});
