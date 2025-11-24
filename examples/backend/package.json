@@ -1,0 +1,11 @@
+{
+  "name": "ai-orchestrator-backend-example",
+  "version": "1.0.0",
+  "description": "Example backend for AI Video Orchestrator",
+  "main": "src/server.ts",
+  "scripts": {
+    "start": "ts-node src/server.ts"
+  },
+  "author": "",
+  "license": "ISC"
+}
